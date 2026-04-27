@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#020617" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>SafeBite — Compra sin miedo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ══ SCREEN: AUTH ════════════════════════════════════════════════════════ -->
+<div id="screenAuth" class="screen active">
+  <div class="auth-wrap">
+    <div class="auth-logo">
+      <div class="logo-icon">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="16" fill="#7ed957" opacity=".15"/>
+          <path d="M10 16.5l4.5 4.5 8-9" stroke="#7ed957" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="logo-text">Safe<span>Bite</span></h1>
+        <p class="logo-tag">Respaldado por <strong>Laztan</strong></p>
+      </div>
+    </div>
+
+    <div class="auth-hero">
+      <h2>Compra sin miedo.<br/><em>Decide en segundos.</em></h2>
+      <p>IA que detecta alérgenos ocultos<br/>para el perfil exacto de tu hijo.</p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchTab('login')">Entrar</button>
+      <button class="auth-tab" onclick="switchTab('register')">Crear cuenta</button>
+    </div>
+
+    <!-- Login form -->
+    <div id="tabLogin" class="auth-form">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="loginEmail" placeholder="tu@email.com" autocomplete="email"/>
+      </div>
+      <div class="field">
+        <label>Contraseña</label>
+        <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password"/>
+      </div>
+      <button class="btn-primary" onclick="login()">
+        <span id="loginBtnText">Entrar</span>
+      </button>
+    </div>
+
+    <!-- Register form -->
+    <div id="tabRegister" class="auth-form hidden">
+      <div class="field">
+        <label>Tu nombre</label>
+        <input type="text" id="regName" placeholder="María García"/>
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="regEmail" placeholder="tu@email.com" autocomplete="email"/>
+      </div>
+      <div class="field">
+        <label>Contraseña</label>
+        <input type="password" id="regPassword" placeholder="Mínimo 6 caracteres" autocomplete="new-password"/>
+      </div>
+      <button class="btn-primary" onclick="register()">
+        <span id="regBtnText">Crear cuenta gratis</span>
+      </button>
+    </div>
+
+    <p id="authError" class="auth-error hidden"></p>
+
+    <div class="auth-trust">
+      <span>🔒 Datos protegidos</span>
+      <span>·</span>
+      <span>🏥 Aval Laztan</span>
+      <span>·</span>
+      <span>🇪🇸 En español</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SCREEN: HOME ════════════════════════════════════════════════════════ -->
+<div id="screenHome" class="screen hidden">
+  <div class="app-wrap">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-brand">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="10" fill="#7ed957" opacity=".2"/>
+          <path d="M6 10.5l3 3 5.5-6" stroke="#7ed957" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Safe<strong>Bite</strong></span>
+      </div>
+      <div class="topbar-right">
+        <button class="topbar-btn" onclick="showScreen('screenHistory')" title="Historial">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        </button>
+        <button class="topbar-btn" onclick="showScreen('screenProfile')" title="Perfil">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.314 3.582-6 8-6s8 2.686 8 6"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Child selector -->
+    <div class="child-bar" id="childBar">
+      <div class="child-bar-inner" id="childBarInner">
+        <!-- populated by JS -->
+      </div>
+      <button class="child-add-btn" onclick="showScreen('screenAddChild')" title="Añadir hijo">+</button>
+    </div>
+
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-text">
+        <p class="hero-eye">Perfil activo</p>
+        <h2 class="hero-name" id="heroChildName">Selecciona un hijo</h2>
+        <p class="hero-allergens" id="heroAllergens">—</p>
+      </div>
+      <div class="hero-badge" id="heroBadge">
+        <span id="heroBadgeEmoji">👶</span>
+      </div>
+    </section>
+
+    <!-- Scan actions -->
+    <div class="scan-card">
+      <p class="scan-label">¿Qué quieres analizar?</p>
+      <div class="scan-grid">
+        <button class="scan-btn" onclick="triggerCamera('label')">
+          <span class="scan-btn-icon">📸</span>
+          <span class="scan-btn-text">Etiqueta</span>
+          <span class="scan-btn-sub">Foto del producto</span>
+        </button>
+        <button class="scan-btn scan-btn-premium" onclick="triggerCamera('menu')">
+          <span class="scan-btn-icon">🍽️</span>
+          <span class="scan-btn-text">Menú</span>
+          <span class="scan-btn-sub">Restaurante</span>
+        </button>
+        <button class="scan-btn scan-btn-premium" onclick="startVoice()">
+          <span class="scan-btn-icon">🎤</span>
+          <span class="scan-btn-text">Voz</span>
+          <span class="scan-btn-sub">Pregunta algo</span>
+        </button>
+        <button class="scan-btn" onclick="showTextInput()">
+          <span class="scan-btn-icon">✏️</span>
+          <span class="scan-btn-text">Texto</span>
+          <span class="scan-btn-sub">Pega ingredientes</span>
+        </button>
+      </div>
+
+      <!-- Text input (hidden by default) -->
+      <div id="textInputArea" class="text-input-area hidden">
+        <textarea id="manualText" placeholder="Pega aquí los ingredientes del producto..." rows="4"></textarea>
+        <button class="btn-primary" onclick="analyzeText()">Analizar ingredientes</button>
+      </div>
+
+      <!-- Voice recording UI -->
+      <div id="voiceUI" class="voice-ui hidden">
+        <div class="voice-pulse" id="voicePulse"></div>
+        <p id="voiceStatus">Escuchando...</p>
+        <p id="voiceTranscript" class="voice-transcript"></p>
+        <button class="btn-secondary" onclick="stopVoice()">Detener</button>
+      </div>
+
+      <p id="scanStatus" class="scan-status"></p>
+    </div>
+
+    <!-- Scans counter -->
+    <div class="scans-bar" id="scansBar">
+      <span id="scansText">5 escaneos disponibles este mes</span>
+      <span class="plan-badge" id="planBadge">GRATIS</span>
+    </div>
+
+    <!-- Hidden file input -->
+    <input type="file" id="fileInput" accept="image/*" capture="environment" hidden/>
+  </div>
+</div>
+
+<!-- ══ SCREEN: RESULT ══════════════════════════════════════════════════════ -->
+<div id="screenResult" class="screen hidden">
+  <div class="app-wrap">
+    <header class="topbar">
+      <button class="topbar-btn" onclick="resetScan()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      </button>
+      <span class="topbar-title">Resultado</span>
+      <div style="width:36px"></div>
+    </header>
+
+    <div class="result-wrap">
+      <div class="result-status-card" id="resultCard">
+        <div class="result-icon" id="resultIcon">🟢</div>
+        <h1 class="result-title" id="resultTitle">APTO</h1>
+        <p class="result-child" id="resultChild"></p>
+        <p class="result-explanation" id="resultExplanation"></p>
+      </div>
+
+      <div class="result-detail" id="resultDetail" class="hidden">
+        <div class="detail-block" id="risksBlock">
+          <p class="detail-label">Riesgos detectados</p>
+          <div id="risksList"></div>
+        </div>
+        <div class="detail-block" id="hiddenBlock">
+          <p class="detail-label">Alérgenos ocultos</p>
+          <div id="hiddenList"></div>
+        </div>
+        <div class="detail-block" id="ingredientsBlock">
+          <p class="detail-label">Ingredientes analizados</p>
+          <p id="ingredientsFound" class="ingredients-text"></p>
+        </div>
+      </div>
+
+      <!-- Laztan badge -->
+      <div class="laztan-badge">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="8" fill="#7ed957" opacity=".2"/><path d="M4 8.5l2.5 2.5 5.5-5.5" stroke="#7ed957" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Análisis validado con protocolos <strong>Laztan</strong></span>
+      </div>
+
+      <button class="btn-primary" onclick="resetScan()">Escanear otro producto</button>
+
+      <!-- WhatsApp expert (premium) -->
+      <button class="btn-whatsapp" onclick="contactExpert()" id="expertBtn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.133.558 4.13 1.535 5.856L.057 23.928l6.243-1.635A11.934 11.934 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.792 9.792 0 01-5.045-1.396l-.361-.215-3.711.972.992-3.617-.235-.372A9.793 9.793 0 012.18 12C2.18 6.558 6.558 2.18 12 2.18S21.82 6.558 21.82 12 17.442 21.818 12 21.818z"/></svg>
+        Consultar con experto (24h)
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SCREEN: ADD CHILD ═══════════════════════════════════════════════════ -->
+<div id="screenAddChild" class="screen hidden">
+  <div class="app-wrap">
+    <header class="topbar">
+      <button class="topbar-btn" onclick="showScreen('screenHome')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      </button>
+      <span class="topbar-title">Añadir hijo</span>
+      <div style="width:36px"></div>
+    </header>
+
+    <div class="form-wrap">
+      <div class="emoji-picker">
+        <p class="form-label">Elige un emoji</p>
+        <div class="emoji-grid" id="emojiGrid"></div>
+      </div>
+
+      <div class="field">
+        <label>Nombre del hijo/a</label>
+        <input type="text" id="childName" placeholder="Lucas, María..."/>
+      </div>
+
+      <div class="allergen-section">
+        <p class="form-label">Alérgenos a controlar</p>
+        <p class="form-sublabel">Toca para seleccionar. Mantén pulsado para ajustar la gravedad.</p>
+        <div class="allergen-grid" id="allergenGrid"></div>
+      </div>
+
+      <button class="btn-primary" onclick="saveChild()">Guardar perfil</button>
+      <p id="childError" class="auth-error hidden"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SCREEN: PROFILE ═════════════════════════════════════════════════════ -->
+<div id="screenProfile" class="screen hidden">
+  <div class="app-wrap">
+    <header class="topbar">
+      <button class="topbar-btn" onclick="showScreen('screenHome')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      </button>
+      <span class="topbar-title">Mi cuenta</span>
+      <div style="width:36px"></div>
+    </header>
+
+    <div class="form-wrap">
+      <div class="profile-card">
+        <div class="profile-avatar" id="profileAvatar">J</div>
+        <div>
+          <p class="profile-name" id="profileName">—</p>
+          <p class="profile-email" id="profileEmail">—</p>
+        </div>
+      </div>
+
+      <div class="plan-card">
+        <div>
+          <p class="plan-label" id="planLabel">Plan GRATUITO</p>
+          <p class="plan-desc">5 escaneos al mes · 1 hijo</p>
+        </div>
+        <button class="btn-upgrade">Actualizar a Premium</button>
+      </div>
+
+      <div class="children-list" id="profileChildrenList"></div>
+
+      <button class="btn-secondary" onclick="logout()">Cerrar sesión</button>
+
+      <div class="laztan-trust">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="10" fill="#7ed957" opacity=".15"/><path d="M6 10.5l3 3 5.5-6" stroke="#7ed957" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div>
+          <p><strong>Respaldado por Laztan</strong></p>
+          <p>Expertos certificados · Sello ATX Allergy Protection · FACE</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SCREEN: HISTORY ═════════════════════════════════════════════════════ -->
+<div id="screenHistory" class="screen hidden">
+  <div class="app-wrap">
+    <header class="topbar">
+      <button class="topbar-btn" onclick="showScreen('screenHome')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      </button>
+      <span class="topbar-title">Historial</span>
+      <div style="width:36px"></div>
+    </header>
+    <div class="form-wrap" id="historyList">
+      <p class="empty-state">Cargando historial...</p>
+    </div>
+  </div>
+</div>
+
+<!-- Severity modal -->
+<div id="severityModal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <p class="modal-title" id="modalAllergenName">Gluten</p>
+    <p class="modal-sub">¿Cuál es la gravedad de la alergia?</p>
+    <div class="severity-options">
+      <button class="severity-btn" data-val="leve" onclick="selectSeverity('leve')">
+        <span>🟡</span> Leve<br/><small>Intolerancia / molestias</small>
+      </button>
+      <button class="severity-btn" data-val="moderada" onclick="selectSeverity('moderada')">
+        <span>🟠</span> Moderada<br/><small>Reacción notable</small>
+      </button>
+      <button class="severity-btn" data-val="grave" onclick="selectSeverity('grave')">
+        <span>🔴</span> Grave<br/><small>Riesgo anafilaxia</small>
+      </button>
+    </div>
+    <button class="btn-secondary" onclick="closeSeverityModal()">Cancelar</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
