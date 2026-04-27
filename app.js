@@ -2,7 +2,7 @@
 const SUPABASE_URL  = 'https://bxcqjjzxwkqytcmpyfuj.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ4Y3Fqanp4d2txeXRjbXB5ZnVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMDQ3MjQsImV4cCI6MjA5Mjg4MDcyNH0.edQEf7WwkXQlLClOSBf8pze4rA2kywU9b_v-IVy3oUA';
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // ── Allergens DB ───────────────────────────────────────────────────────────
 const ALLERGENS = [
@@ -39,7 +39,7 @@ let state = {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 (async () => {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await sb.auth.getSession();
   if (session) {
     state.user = session.user;
     await loadUserData();
@@ -48,7 +48,7 @@ let state = {
     showScreen('screenAuth');
   }
 
-  supabase.auth.onAuthStateChange(async (event, session) => {
+  sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN' && session) {
       state.user = session.user;
       await loadUserData();
@@ -80,7 +80,7 @@ async function login() {
   if (!email || !pass) return showAuthError('Completa todos los campos');
 
   setAuthLoading('loginBtnText', 'Entrando...');
-  const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass });
   setAuthLoading('loginBtnText', 'Entrar');
   if (error) showAuthError(error.message === 'Invalid login credentials'
     ? 'Email o contraseña incorrectos' : error.message);
@@ -94,7 +94,7 @@ async function register() {
   if (pass.length < 6) return showAuthError('La contraseña debe tener al menos 6 caracteres');
 
   setAuthLoading('regBtnText', 'Creando cuenta...');
-  const { error } = await supabase.auth.signUp({
+  const { error } = await sb.auth.signUp({
     email, password: pass,
     options: { data: { name } }
   });
@@ -104,7 +104,7 @@ async function register() {
 }
 
 async function logout() {
-  await supabase.auth.signOut();
+  await sb.auth.signOut();
 }
 
 function showAuthError(msg, ok = false) {
@@ -119,12 +119,12 @@ function setAuthLoading(id, text) { document.getElementById(id).textContent = te
 // ── Load user data ─────────────────────────────────────────────────────────
 async function loadUserData() {
   // Load profile
-  const { data: profile } = await supabase
+  const { data: profile } = await sb
     .from('profiles').select('*').eq('id', state.user.id).single();
   state.profile = profile;
 
   // Load children
-  const { data: children } = await supabase
+  const { data: children } = await sb
     .from('children').select('*').eq('user_id', state.user.id).order('created_at');
   state.children = children || [];
 
@@ -266,7 +266,7 @@ async function saveChild() {
     return;
   }
 
-  const { data, error } = await supabase.from('children').insert({
+  const { data, error } = await sb.from('children').insert({
     user_id: state.user.id,
     name,
     emoji: state.selectedEmoji,
@@ -370,7 +370,7 @@ function checkScanLimit() {
 
 async function incrementScans() {
   const newCount = (state.profile?.scans_this_month || 0) + 1;
-  await supabase.from('profiles')
+  await sb.from('profiles')
     .update({ scans_this_month: newCount })
     .eq('id', state.user.id);
   if (state.profile) state.profile.scans_this_month = newCount;
@@ -378,7 +378,7 @@ async function incrementScans() {
 }
 
 async function saveScan(result, mode) {
-  await supabase.from('scans').insert({
+  await sb.from('scans').insert({
     user_id: state.user.id,
     child_id: state.activeChild?.id,
     result: result.explanation,
@@ -513,7 +513,7 @@ async function loadHistory() {
   const list = document.getElementById('historyList');
   list.innerHTML = '<p class="empty-state">Cargando...</p>';
 
-  const { data: scans } = await supabase
+  const { data: scans } = await sb
     .from('scans')
     .select('*')
     .eq('user_id', state.user.id)
