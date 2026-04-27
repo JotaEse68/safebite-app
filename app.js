@@ -1,7 +1,10 @@
-// ── Config ─────────────────────────────────────────────────────────────────
+// ── Config ────────────────────────────────────────────────────────────────────
 const SUPABASE_URL  = 'https://bxcqjjzxwkqytcmpyfuj.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ4Y3Fqanp4d2txeXRjbXB5ZnVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMDQ3MjQsImV4cCI6MjA5Mjg4MDcyNH0.edQEf7WwkXQlLClOSBf8pze4rA2kywU9b_v-IVy3oUA';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+// Admin email - only this user sees admin panel
+const ADMIN_EMAIL = 'jsantospro3@gmail.com';
 
 const ALLERGENS = [
   { id: 'gluten',     label: 'Gluten',       emoji: '🌾' },
@@ -26,8 +29,10 @@ let state = {
   user: null, profile: null, children: [], activeChild: null,
   scanMode: 'label', selectedEmoji: '👦', selectedAllergens: [],
   pendingAllergenId: null, editingChildId: null, recognition: null,
+  childDocs: [], // docs for the child being edited/created
 };
 
+// ── Init ───────────────────────────────────────────────────────────────────────
 (async () => {
   const { data: { session } } = await sb.auth.getSession();
   if (session) { state.user = session.user; await loadUserData(); showScreen('screenHome'); }
@@ -47,6 +52,7 @@ let state = {
   document.getElementById('fileInput').addEventListener('change', handleFileInput);
 })();
 
+// ── Auth ───────────────────────────────────────────────────────────────────────
 function switchTab(tab) {
   document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
   event.currentTarget.classList.add('active');
@@ -79,8 +85,7 @@ async function register() {
 }
 
 async function logout() { await sb.auth.signOut(); }
-
-function showAuthError(msg, ok = false) {
+function showAuthError(msg, ok=false) {
   const el = document.getElementById('authError');
   el.textContent = msg; el.style.color = ok ? 'var(--green)' : 'var(--red)';
   el.classList.remove('hidden');
@@ -88,15 +93,33 @@ function showAuthError(msg, ok = false) {
 function hideAuthError() { document.getElementById('authError').classList.add('hidden'); }
 function setAuthLoading(id, text) { document.getElementById(id).textContent = text; }
 
+// ── Load data ──────────────────────────────────────────────────────────────────
 async function loadUserData() {
   const { data: profile } = await sb.from('profiles').select('*').eq('id', state.user.id).single();
   state.profile = profile;
   const { data: children } = await sb.from('children').select('*').eq('user_id', state.user.id).order('created_at');
   state.children = children || [];
   if (state.children.length > 0 && !state.activeChild) state.activeChild = state.children[0];
+
+  // Show admin button if admin
+  if (state.user.email === ADMIN_EMAIL) {
+    const topbar = document.querySelector('#screenHome .topbar-right');
+    if (topbar && !document.getElementById('adminBtn')) {
+      const btn = document.createElement('button');
+      btn.id = 'adminBtn';
+      btn.className = 'topbar-btn';
+      btn.title = 'Admin';
+      btn.innerHTML = '⚙️';
+      btn.style.fontSize = '16px';
+      btn.onclick = () => { showScreen('screenAdmin'); loadAdminData(); };
+      topbar.prepend(btn);
+    }
+  }
+
   renderHome(); renderProfileScreen();
 }
 
+// ── Render home ────────────────────────────────────────────────────────────────
 function renderHome() {
   const inner = document.getElementById('childBarInner');
   inner.innerHTML = '';
@@ -107,7 +130,6 @@ function renderHome() {
     chip.onclick = () => { state.activeChild = child; renderHome(); };
     inner.appendChild(chip);
   });
-
   if (state.activeChild) {
     const a = state.activeChild.allergens || [];
     document.getElementById('heroChildName').textContent = state.activeChild.name;
@@ -118,12 +140,12 @@ function renderHome() {
     document.getElementById('heroBadgeEmoji').textContent = '👶';
     document.getElementById('heroAllergens').textContent = 'Toca + para crear un perfil';
   }
-
   const left = Math.max(0, 5 - (state.profile?.scans_this_month || 0));
   document.getElementById('scansText').textContent = `${left} escaneos disponibles este mes`;
   document.getElementById('planBadge').textContent = state.profile?.plan === 'premium' ? 'PREMIUM ⭐' : 'GRATIS';
 }
 
+// ── Render profile ─────────────────────────────────────────────────────────────
 function renderProfileScreen() {
   if (!state.user) return;
   const name = state.profile?.name || state.user.email.split('@')[0];
@@ -135,40 +157,110 @@ function renderProfileScreen() {
   const list = document.getElementById('profileChildrenList');
   list.innerHTML = '';
   state.children.forEach(child => {
-    const allergens = (child.allergens || []).map(a => a.label).join(', ');
     const card = document.createElement('div');
     card.className = 'child-profile-card';
     card.innerHTML = `
       <span class="child-profile-emoji">${child.emoji}</span>
       <div style="flex:1">
         <p class="child-profile-name">${child.name}</p>
-        <p class="child-profile-allergens">${allergens || 'Sin alérgenos'}</p>
+        <p class="child-profile-allergens">${(child.allergens||[]).map(a=>a.label).join(', ')||'Sin alérgenos'}</p>
       </div>
       <button class="edit-child-btn" onclick="openEditChild('${child.id}')">✏️ Editar</button>`;
     list.appendChild(card);
   });
 }
 
+// ── Add / Edit child ───────────────────────────────────────────────────────────
 function openAddChild() {
-  state.editingChildId = null; state.selectedEmoji = '👦'; state.selectedAllergens = [];
+  state.editingChildId = null; state.selectedEmoji = '👦'; state.selectedAllergens = []; state.childDocs = [];
   document.getElementById('childName').value = '';
   document.getElementById('addChildTitle').textContent = 'Añadir hijo';
   document.getElementById('saveChildBtnText').textContent = 'Guardar perfil';
   document.getElementById('childError').classList.add('hidden');
+  document.getElementById('childDocsList').innerHTML = '';
   renderEmojiPicker(); renderAllergenGrid(); showScreen('screenAddChild');
 }
 
-function openEditChild(childId) {
+async function openEditChild(childId) {
   const child = state.children.find(c => c.id === childId);
   if (!child) return;
   state.editingChildId = childId;
   state.selectedEmoji = child.emoji;
   state.selectedAllergens = [...(child.allergens || [])];
+  state.childDocs = [];
   document.getElementById('childName').value = child.name;
   document.getElementById('addChildTitle').textContent = 'Editar perfil';
   document.getElementById('saveChildBtnText').textContent = 'Guardar cambios';
   document.getElementById('childError').classList.add('hidden');
-  renderEmojiPicker(); renderAllergenGrid(); showScreen('screenAddChild');
+  renderEmojiPicker(); renderAllergenGrid();
+  await loadChildDocs(childId);
+  showScreen('screenAddChild');
+}
+
+async function loadChildDocs(childId) {
+  const { data } = await sb.from('documents').select('*').eq('child_id', childId).order('created_at');
+  state.childDocs = data || [];
+  renderChildDocsList();
+}
+
+function renderChildDocsList() {
+  const list = document.getElementById('childDocsList');
+  list.innerHTML = '';
+  state.childDocs.forEach(doc => {
+    const item = document.createElement('div');
+    item.className = 'doc-item';
+    item.innerHTML = `
+      <span class="doc-item-icon">📄</span>
+      <span class="doc-item-name">${doc.name}</span>
+      <span class="doc-item-size">${formatBytes(doc.size || 0)}</span>
+      <button class="doc-item-del" onclick="deleteChildDoc('${doc.id}', '${doc.path}')" title="Eliminar">✕</button>`;
+    list.appendChild(item);
+  });
+}
+
+async function uploadChildDoc() {
+  const input = document.getElementById('childDocInput');
+  const files = Array.from(input.files);
+  if (!files.length) return;
+
+  // Need childId — if creating new, save child first
+  let childId = state.editingChildId;
+  if (!childId) {
+    const name = document.getElementById('childName').value.trim();
+    if (!name) { document.getElementById('childError').textContent = 'Guarda el perfil del hijo antes de subir documentos'; document.getElementById('childError').classList.remove('hidden'); return; }
+    const { data, error } = await sb.from('children').insert({ user_id: state.user.id, name, emoji: state.selectedEmoji, allergens: state.selectedAllergens }).select().single();
+    if (error) return;
+    state.editingChildId = data.id; childId = data.id;
+    state.children.push(data); state.activeChild = data;
+  }
+
+  const list = document.getElementById('childDocsList');
+  for (const file of files) {
+    const uploading = document.createElement('p');
+    uploading.className = 'doc-uploading'; uploading.textContent = `Subiendo ${file.name}...`;
+    list.appendChild(uploading);
+
+    const path = `children/${childId}/${Date.now()}_${file.name}`;
+    const { error: upErr } = await sb.storage.from('documents').upload(path, file);
+    list.removeChild(uploading);
+    if (upErr) { alert('Error subiendo: ' + upErr.message); continue; }
+
+    const { data } = await sb.from('documents').insert({
+      user_id: state.user.id, child_id: childId,
+      name: file.name, path, size: file.size, type: 'child'
+    }).select().single();
+    if (data) state.childDocs.push(data);
+  }
+  renderChildDocsList();
+  input.value = '';
+}
+
+async function deleteChildDoc(docId, path) {
+  if (!confirm('¿Eliminar este documento?')) return;
+  await sb.storage.from('documents').remove([path]);
+  await sb.from('documents').delete().eq('id', docId);
+  state.childDocs = state.childDocs.filter(d => d.id !== docId);
+  renderChildDocsList();
 }
 
 function renderEmojiPicker() {
@@ -178,11 +270,7 @@ function renderEmojiPicker() {
     const btn = document.createElement('button');
     btn.className = 'emoji-option' + (emoji === state.selectedEmoji ? ' selected' : '');
     btn.textContent = emoji;
-    btn.onclick = () => {
-      state.selectedEmoji = emoji;
-      document.querySelectorAll('.emoji-option').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-    };
+    btn.onclick = () => { state.selectedEmoji = emoji; document.querySelectorAll('.emoji-option').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); };
     grid.appendChild(btn);
   });
 }
@@ -191,27 +279,21 @@ function renderAllergenGrid() {
   const grid = document.getElementById('allergenGrid');
   grid.innerHTML = '';
   ALLERGENS.forEach(a => {
-    const selected = state.selectedAllergens.find(x => x.id === a.id);
+    const sel = state.selectedAllergens.find(x => x.id === a.id);
     const chip = document.createElement('button');
-    chip.className = 'allergen-chip' + (selected ? ' selected' : '');
-    const sEmoji = selected?.severity === 'leve' ? '🟡' : selected?.severity === 'moderada' ? '🟠' : selected?.severity === 'grave' ? '🔴' : '';
-    chip.innerHTML = `<span class="allergen-chip-name">${a.emoji} ${a.label}</span>${selected ? `<span class="allergen-chip-severity">${sEmoji} ${selected.severity}</span>` : ''}`;
+    chip.className = 'allergen-chip' + (sel ? ' selected' : '');
+    const sE = sel?.severity === 'leve' ? '🟡' : sel?.severity === 'moderada' ? '🟠' : sel?.severity === 'grave' ? '🔴' : '';
+    chip.innerHTML = `<span class="allergen-chip-name">${a.emoji} ${a.label}</span>${sel ? `<span class="allergen-chip-severity">${sE} ${sel.severity}</span>` : ''}`;
     chip.onclick = () => {
-      if (selected) { state.selectedAllergens = state.selectedAllergens.filter(x => x.id !== a.id); renderAllergenGrid(); }
+      if (sel) { state.selectedAllergens = state.selectedAllergens.filter(x => x.id !== a.id); renderAllergenGrid(); }
       else { state.pendingAllergenId = a.id; openSeverityModal(a.label); }
     };
     grid.appendChild(chip);
   });
 }
 
-function openSeverityModal(name) {
-  document.getElementById('modalAllergenName').textContent = name;
-  document.getElementById('severityModal').classList.remove('hidden');
-}
-function closeSeverityModal() {
-  document.getElementById('severityModal').classList.add('hidden');
-  state.pendingAllergenId = null;
-}
+function openSeverityModal(name) { document.getElementById('modalAllergenName').textContent = name; document.getElementById('severityModal').classList.remove('hidden'); }
+function closeSeverityModal() { document.getElementById('severityModal').classList.add('hidden'); state.pendingAllergenId = null; }
 function selectSeverity(severity) {
   const a = ALLERGENS.find(x => x.id === state.pendingAllergenId);
   if (a) state.selectedAllergens.push({ ...a, severity });
@@ -220,11 +302,7 @@ function selectSeverity(severity) {
 
 async function saveChild() {
   const name = document.getElementById('childName').value.trim();
-  if (!name) {
-    document.getElementById('childError').textContent = 'El nombre es obligatorio';
-    document.getElementById('childError').classList.remove('hidden');
-    return;
-  }
+  if (!name) { document.getElementById('childError').textContent = 'El nombre es obligatorio'; document.getElementById('childError').classList.remove('hidden'); return; }
   const payload = { name, emoji: state.selectedEmoji, allergens: state.selectedAllergens };
 
   if (state.editingChildId) {
@@ -239,16 +317,94 @@ async function saveChild() {
     state.children.push(data); state.activeChild = data;
   }
 
-  state.selectedAllergens = []; state.selectedEmoji = '👦'; state.editingChildId = null;
+  state.selectedAllergens = []; state.selectedEmoji = '👦'; state.editingChildId = null; state.childDocs = [];
   document.getElementById('childName').value = '';
   document.getElementById('childError').classList.add('hidden');
   renderHome(); renderProfileScreen(); showScreen('screenHome');
 }
 
+// ── Admin ──────────────────────────────────────────────────────────────────────
+async function loadAdminData() {
+  // Stats
+  const { count: usersCount } = await sb.from('profiles').select('*', { count: 'exact', head: true });
+  const { count: scansCount } = await sb.from('scans').select('*', { count: 'exact', head: true });
+  const { count: childrenCount } = await sb.from('children').select('*', { count: 'exact', head: true });
+  document.getElementById('statUsers').textContent = usersCount || 0;
+  document.getElementById('statScans').textContent = scansCount || 0;
+  document.getElementById('statChildren').textContent = childrenCount || 0;
+
+  // Admin docs (Laztan knowledge base)
+  const { data: docs } = await sb.from('documents').select('*').eq('type', 'admin').order('created_at', { ascending: false });
+  renderAdminDocs(docs || []);
+
+  // Recent users
+  const { data: users } = await sb.from('profiles').select('id, name, plan, scans_this_month').order('created_at', { ascending: false }).limit(10);
+  renderAdminUsers(users || []);
+}
+
+function renderAdminDocs(docs) {
+  const list = document.getElementById('adminDocsList');
+  list.innerHTML = '';
+  docs.forEach(doc => {
+    const item = document.createElement('div');
+    item.className = 'doc-item';
+    item.innerHTML = `
+      <span class="doc-item-icon">📖</span>
+      <span class="doc-item-name">${doc.name}</span>
+      <span class="doc-item-size">${formatBytes(doc.size || 0)}</span>
+      <button class="doc-item-del" onclick="deleteAdminDoc('${doc.id}', '${doc.path}')" title="Eliminar">✕</button>`;
+    list.appendChild(item);
+  });
+}
+
+function renderAdminUsers(users) {
+  const list = document.getElementById('adminUsersList');
+  list.innerHTML = '';
+  users.forEach(u => {
+    const row = document.createElement('div');
+    row.className = 'admin-user-row';
+    row.innerHTML = `
+      <span class="admin-user-email">${u.name || 'Usuario'}</span>
+      <span class="admin-user-plan">${(u.plan || 'free').toUpperCase()}</span>
+      <span class="admin-user-scans">${u.scans_this_month || 0} escaneos</span>`;
+    list.appendChild(row);
+  });
+}
+
+async function uploadAdminDoc() {
+  const input = document.getElementById('adminDocInput');
+  const files = Array.from(input.files);
+  const list = document.getElementById('adminDocsList');
+
+  for (const file of files) {
+    const uploading = document.createElement('p');
+    uploading.className = 'doc-uploading'; uploading.textContent = `Subiendo ${file.name}...`;
+    list.prepend(uploading);
+
+    const path = `admin/${Date.now()}_${file.name}`;
+    const { error: upErr } = await sb.storage.from('documents').upload(path, file);
+    list.removeChild(uploading);
+    if (upErr) { alert('Error: ' + upErr.message); continue; }
+
+    await sb.from('documents').insert({
+      user_id: state.user.id, name: file.name, path, size: file.size, type: 'admin'
+    });
+  }
+  input.value = '';
+  await loadAdminData();
+}
+
+async function deleteAdminDoc(docId, path) {
+  if (!confirm('¿Eliminar este protocolo?')) return;
+  await sb.storage.from('documents').remove([path]);
+  await sb.from('documents').delete().eq('id', docId);
+  await loadAdminData();
+}
+
+// ── Scan ───────────────────────────────────────────────────────────────────────
 function triggerCamera(mode) {
   if (!state.activeChild) { alert('Primero añade el perfil de un hijo'); return; }
-  state.scanMode = mode;
-  document.getElementById('fileInput').click();
+  state.scanMode = mode; document.getElementById('fileInput').click();
 }
 
 function showTextInput() {
@@ -261,7 +417,8 @@ function showTextInput() {
 async function handleFileInput(e) {
   const file = e.target.files[0];
   if (!file) return;
-  const dataUrl = await toDataUrl(file);
+  const rawUrl = await toDataUrl(file);
+  const dataUrl = await compressImage(rawUrl);
   await analyze(dataUrl, state.scanMode);
   e.target.value = '';
 }
@@ -274,12 +431,25 @@ async function analyzeText() {
 
 async function analyze(data, mode) {
   if (!checkScanLimit()) return;
-  const msgs = { label: 'Analizando etiqueta...', menu: 'Analizando menú...', text: 'Analizando ingredientes...' };
-  showLoading(msgs[mode] || 'Analizando...', 'IA con protocolos Laztan');
+  showLoading(mode === 'menu' ? 'Analizando menú...' : 'Analizando ingredientes...', 'IA con protocolos Laztan');
   try {
+    // Load admin docs context (Laztan knowledge base)
+    const { data: adminDocs } = await sb.from('documents').select('name, path').eq('type', 'admin').limit(5);
+    // Load child docs context
+    const childDocs = state.activeChild
+      ? (await sb.from('documents').select('name, path').eq('child_id', state.activeChild.id).limit(3)).data || []
+      : [];
+
     const res = await fetch('/.netlify/functions/analyze', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageDataUrl: data, allergens: state.activeChild?.allergens || [], childName: state.activeChild?.name || 'tu hijo', mode }),
+      body: JSON.stringify({
+        imageDataUrl: data,
+        allergens: state.activeChild?.allergens || [],
+        childName: state.activeChild?.name || 'tu hijo',
+        mode,
+        adminDocNames: (adminDocs || []).map(d => d.name),
+        childDocNames: childDocs.map(d => d.name),
+      }),
     });
     const result = await res.json();
     if (!res.ok || result.error) throw new Error(result.error || 'Error en el análisis');
@@ -291,9 +461,7 @@ async function analyze(data, mode) {
 
 function checkScanLimit() {
   if (state.profile?.plan === 'premium') return true;
-  if ((state.profile?.scans_this_month || 0) >= 5) {
-    alert('Límite de 5 escaneos gratuitos alcanzado. Actualiza a Premium para ilimitados.'); return false;
-  }
+  if ((state.profile?.scans_this_month || 0) >= 5) { alert('Límite de 5 escaneos gratuitos alcanzado. Actualiza a Premium para ilimitados.'); return false; }
   return true;
 }
 
@@ -312,6 +480,7 @@ async function saveScan(result) {
   });
 }
 
+// ── Show result ────────────────────────────────────────────────────────────────
 function showResult(result) {
   const card = document.getElementById('resultCard');
   card.className = 'result-status-card';
@@ -324,24 +493,16 @@ function showResult(result) {
   document.getElementById('resultChild').textContent = state.activeChild ? `Perfil: ${state.activeChild.emoji} ${state.activeChild.name}` : '';
   document.getElementById('resultExplanation').textContent = result.explanation || '';
 
-  const risksList = document.getElementById('risksList');
-  risksList.innerHTML = '';
-  if (result.risks?.length) {
-    result.risks.forEach(r => { const c = document.createElement('span'); c.className = 'risk-chip'; c.textContent = r; risksList.appendChild(c); });
-    document.getElementById('risksBlock').style.display = 'block';
-  } else document.getElementById('risksBlock').style.display = 'none';
+  const rL = document.getElementById('risksList'); rL.innerHTML = '';
+  if (result.risks?.length) { result.risks.forEach(r => { const c = document.createElement('span'); c.className = 'risk-chip'; c.textContent = r; rL.appendChild(c); }); document.getElementById('risksBlock').style.display = 'block'; }
+  else document.getElementById('risksBlock').style.display = 'none';
 
-  const hiddenList = document.getElementById('hiddenList');
-  hiddenList.innerHTML = '';
-  if (result.hidden_allergens?.length) {
-    result.hidden_allergens.forEach(h => { const c = document.createElement('span'); c.className = 'hidden-chip'; c.textContent = h; hiddenList.appendChild(c); });
-    document.getElementById('hiddenBlock').style.display = 'block';
-  } else document.getElementById('hiddenBlock').style.display = 'none';
+  const hL = document.getElementById('hiddenList'); hL.innerHTML = '';
+  if (result.hidden_allergens?.length) { result.hidden_allergens.forEach(h => { const c = document.createElement('span'); c.className = 'hidden-chip'; c.textContent = h; hL.appendChild(c); }); document.getElementById('hiddenBlock').style.display = 'block'; }
+  else document.getElementById('hiddenBlock').style.display = 'none';
 
-  if (result.ingredients_found) {
-    document.getElementById('ingredientsFound').textContent = result.ingredients_found;
-    document.getElementById('ingredientsBlock').style.display = 'block';
-  } else document.getElementById('ingredientsBlock').style.display = 'none';
+  if (result.ingredients_found) { document.getElementById('ingredientsFound').textContent = result.ingredients_found; document.getElementById('ingredientsBlock').style.display = 'block'; }
+  else document.getElementById('ingredientsBlock').style.display = 'none';
 
   showScreen('screenResult');
 }
@@ -353,6 +514,7 @@ function resetScan() {
   showScreen('screenHome');
 }
 
+// ── Voice ──────────────────────────────────────────────────────────────────────
 function startVoice() {
   if (!state.activeChild) { alert('Primero añade el perfil de un hijo'); return; }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -362,9 +524,7 @@ function startVoice() {
   document.getElementById('voiceUI').classList.remove('hidden');
   document.getElementById('textInputArea').classList.add('hidden');
   document.getElementById('voiceTranscript').textContent = '';
-  state.recognition.onresult = (e) => {
-    document.getElementById('voiceTranscript').textContent = Array.from(e.results).map(r => r[0].transcript).join('');
-  };
+  state.recognition.onresult = e => { document.getElementById('voiceTranscript').textContent = Array.from(e.results).map(r => r[0].transcript).join(''); };
   state.recognition.onend = async () => {
     const t = document.getElementById('voiceTranscript').textContent;
     document.getElementById('voiceUI').classList.add('hidden');
@@ -375,11 +535,9 @@ function startVoice() {
   document.getElementById('voiceStatus').textContent = 'Escuchando... habla ahora';
 }
 
-function stopVoice() {
-  if (state.recognition) state.recognition.stop();
-  document.getElementById('voiceUI').classList.add('hidden');
-}
+function stopVoice() { if (state.recognition) state.recognition.stop(); document.getElementById('voiceUI').classList.add('hidden'); }
 
+// ── WhatsApp ───────────────────────────────────────────────────────────────────
 function contactExpert() {
   const child = state.activeChild;
   const allergens = child?.allergens?.map(a => `${a.label} (${a.severity})`).join(', ') || 'no especificados';
@@ -387,11 +545,12 @@ function contactExpert() {
   window.open(`https://wa.me/34946489032?text=${msg}`, '_blank');
 }
 
+// ── History ────────────────────────────────────────────────────────────────────
 async function loadHistory() {
   const list = document.getElementById('historyList');
   list.innerHTML = '<p class="empty-state">Cargando...</p>';
   const { data: scans } = await sb.from('scans').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false }).limit(20);
-  if (!scans || !scans.length) { list.innerHTML = '<p class="empty-state">No hay escaneos todavía.<br/>¡Escanea tu primer producto!</p>'; return; }
+  if (!scans?.length) { list.innerHTML = '<p class="empty-state">No hay escaneos todavía.<br/>¡Escanea tu primer producto!</p>'; return; }
   list.innerHTML = '';
   scans.forEach(scan => {
     const icon = scan.status === 'APTO' ? '🟢' : scan.status === 'PRECAUCION' ? '🟡' : '🔴';
@@ -399,11 +558,12 @@ async function loadHistory() {
     const date = new Date(scan.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
     const item = document.createElement('div');
     item.className = 'history-item';
-    item.innerHTML = `<span class="history-icon">${icon}</span><div style="flex:1;min-width:0"><p class="history-status ${cls}">${scan.status}</p><p class="history-explanation">${scan.result || '—'}</p></div><span class="history-date">${date}</span>`;
+    item.innerHTML = `<span class="history-icon">${icon}</span><div style="flex:1;min-width:0"><p class="history-status ${cls}">${scan.status}</p><p class="history-explanation">${scan.result||'—'}</p></div><span class="history-date">${date}</span>`;
     list.appendChild(item);
   });
 }
 
+// ── Screen routing ─────────────────────────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => { s.classList.remove('active'); s.classList.add('hidden'); });
   const t = document.getElementById(id);
@@ -412,18 +572,43 @@ function showScreen(id) {
   if (id === 'screenAddChild') { renderEmojiPicker(); renderAllergenGrid(); }
 }
 
-function showLoading(text = 'Analizando...', sub = '') {
+// ── Loading ────────────────────────────────────────────────────────────────────
+function showLoading(text='Analizando...', sub='') {
   let o = document.getElementById('loadingOverlay');
   if (!o) { o = document.createElement('div'); o.id = 'loadingOverlay'; o.className = 'loading-overlay'; document.body.appendChild(o); }
-  o.innerHTML = `<div class="loading-spinner"></div><p class="loading-text">${text}</p>${sub ? `<p class="loading-sub">${sub}</p>` : ''}`;
+  o.innerHTML = `<div class="loading-spinner"></div><p class="loading-text">${text}</p>${sub?`<p class="loading-sub">${sub}</p>`:''}`;
   o.classList.remove('hidden');
 }
 function hideLoading() { const o = document.getElementById('loadingOverlay'); if (o) o.classList.add('hidden'); }
 
+// ── Utils ──────────────────────────────────────────────────────────────────────
 function toDataUrl(file) {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result); r.onerror = () => rej(new Error('No se pudo leer'));
-    r.readAsDataURL(file);
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('No se pudo leer')); r.readAsDataURL(file); });
+}
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1024/1024).toFixed(1) + ' MB';
+}
+
+// ── Image compression ─────────────────────────────────────────────────────────
+function compressImage(dataUrl, maxWidth = 1200, quality = 0.75) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxWidth) {
+        height = Math.round(height * maxWidth / width);
+        width = maxWidth;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl); // fallback: use original
+    img.src = dataUrl;
   });
 }
