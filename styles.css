@@ -809,3 +809,18 @@ html, body {
 /* ── Utilities ─────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 button { cursor: pointer; }
+
+/* ── Edit child button ───────────────────────────────────────────────────── */
+.edit-child-btn {
+  padding: 6px 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all .2s;
+}
+.edit-child-btn:hover { border-color: var(--green); color: var(--green); }
