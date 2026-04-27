@@ -115,7 +115,7 @@
       <div class="child-bar-inner" id="childBarInner">
         <!-- populated by JS -->
       </div>
-      <button class="child-add-btn" onclick="showScreen('screenAddChild')" title="Añadir hijo">+</button>
+      <button class="child-add-btn" onclick="openAddChild()" title="Añadir hijo">+</button>
     </div>
 
     <!-- Hero -->
@@ -139,12 +139,12 @@
           <span class="scan-btn-text">Etiqueta</span>
           <span class="scan-btn-sub">Foto del producto</span>
         </button>
-        <button class="scan-btn scan-btn-premium" onclick="triggerCamera('menu')">
+        <button class="scan-btn" onclick="triggerCamera('menu')">
           <span class="scan-btn-icon">🍽️</span>
           <span class="scan-btn-text">Menú</span>
           <span class="scan-btn-sub">Restaurante</span>
         </button>
-        <button class="scan-btn scan-btn-premium" onclick="startVoice()">
+        <button class="scan-btn" onclick="startVoice()">
           <span class="scan-btn-icon">🎤</span>
           <span class="scan-btn-text">Voz</span>
           <span class="scan-btn-sub">Pregunta algo</span>
@@ -242,7 +242,7 @@
       <button class="topbar-btn" onclick="showScreen('screenHome')">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
       </button>
-      <span class="topbar-title">Añadir hijo</span>
+      <span class="topbar-title" id="addChildTitle">Añadir hijo</span>
       <div style="width:36px"></div>
     </header>
 
@@ -263,7 +263,7 @@
         <div class="allergen-grid" id="allergenGrid"></div>
       </div>
 
-      <button class="btn-primary" onclick="saveChild()">Guardar perfil</button>
+      <button class="btn-primary" onclick="saveChild()"><span id="saveChildBtnText">Guardar perfil</span></button>
       <p id="childError" class="auth-error hidden"></p>
     </div>
   </div>
