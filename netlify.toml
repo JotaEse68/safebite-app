@@ -8,13 +8,7 @@
 [functions."analyze"]
   timeout = 26
 
-# Netlify functions deben ir ANTES del catch-all SPA
-[[redirects]]
-  from = "/.netlify/functions/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-
-# SPA fallback
+# SPA fallback - solo esto, Netlify maneja /.netlify/* automáticamente
 [[redirects]]
   from = "/*"
   to = "/index.html"
