@@ -417,9 +417,15 @@ function showTextInput() {
 async function handleFileInput(e) {
   const file = e.target.files[0];
   if (!file) return;
-  const rawUrl = await toDataUrl(file);
-  const dataUrl = await compressImage(rawUrl);
-  await analyze(dataUrl, state.scanMode);
+  showLoading('Procesando imagen...', 'Comprimiendo para análisis');
+  try {
+    const dataUrl = await compressImageFromFile(file);
+    hideLoading();
+    await analyze(dataUrl, state.scanMode);
+  } catch(err) {
+    hideLoading();
+    document.getElementById('scanStatus').textContent = '⚠️ Error al procesar imagen: ' + err.message;
+  }
   e.target.value = '';
 }
 
@@ -620,33 +626,58 @@ function formatBytes(bytes) {
 }
 
 // ── Image compression ─────────────────────────────────────────────────────────
+// Comprime directamente desde File (evita cargar imagen entera en memoria en móvil)
+function compressImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      // Máximo 600px — suficiente para OCR de etiquetas, mínimo peso
+      const MAX = 600;
+      let { width, height } = img;
+      if (width > height) {
+        if (width > MAX) { height = Math.round(height * MAX / width); width = MAX; }
+      } else {
+        if (height > MAX) { width = Math.round(width * MAX / height); height = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+
+      // Calidad 0.6 → base64 resultante ~80-150KB, bien dentro del límite de 1MB
+      let result = canvas.toDataURL('image/jpeg', 0.6);
+
+      // Doble check: si aún supera 500KB base64, reducir más
+      if (result.length > 500000) {
+        const canvas2 = document.createElement('canvas');
+        const scale = Math.sqrt(450000 / result.length);
+        canvas2.width = Math.round(width * scale);
+        canvas2.height = Math.round(height * scale);
+        canvas2.getContext('2d').drawImage(img, 0, 0, canvas2.width, canvas2.height);
+        result = canvas2.toDataURL('image/jpeg', 0.55);
+      }
+
+      console.log('[SafeBite] Imagen comprimida:', Math.round(result.length/1024) + 'KB base64');
+      resolve(result);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo cargar la imagen')); };
+    img.src = url;
+  });
+}
+
+// Mantener compressImage para compatibilidad con otros usos
 function compressImage(dataUrl, maxWidth = 800, quality = 0.65) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
       let { width, height } = img;
-      // Reducir más agresivamente para no exceder el límite de 1MB de Netlify Functions
-      if (width > maxWidth) {
-        height = Math.round(height * maxWidth / width);
-        width = maxWidth;
-      }
+      if (width > maxWidth) { height = Math.round(height * maxWidth / width); width = maxWidth; }
       const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-      const compressed = canvas.toDataURL('image/jpeg', quality);
-      // Si aún es demasiado grande (>700KB en base64 ≈ ~525KB binario), comprimir más
-      if (compressed.length > 700000) {
-        const canvas2 = document.createElement('canvas');
-        const scale = Math.sqrt(700000 / compressed.length);
-        canvas2.width = Math.round(width * scale);
-        canvas2.height = Math.round(height * scale);
-        canvas2.getContext('2d').drawImage(img, 0, 0, canvas2.width, canvas2.height);
-        resolve(canvas2.toDataURL('image/jpeg', 0.6));
-      } else {
-        resolve(compressed);
-      }
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
     };
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
