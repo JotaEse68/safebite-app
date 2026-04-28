@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeBite — Diagnóstico Cámara</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, sans-serif; background: #0f0f0f; color: #eee; padding: 16px; max-width: 500px; margin: 0 auto; }
+h1 { font-size: 18px; color: #7ed957; margin-bottom: 4px; }
+p.sub { font-size: 12px; color: #888; margin-bottom: 20px; }
+.card { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+.card h2 { font-size: 13px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+.btn { display: block; width: 100%; padding: 12px; background: #7ed957; color: #000; font-weight: 700; font-size: 15px; border: none; border-radius: 8px; cursor: pointer; margin-bottom: 8px; }
+.btn-sec { background: #222; color: #eee; border: 1px solid #444; }
+.log { background: #111; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 12px; line-height: 1.6; max-height: 400px; overflow-y: auto; }
+.ok { color: #7ed957; }
+.err { color: #ff4444; }
+.warn { color: #ffaa00; }
+.info { color: #4af; }
+.step { color: #888; }
+input[type=file] { display: none; }
+#preview { width: 100%; border-radius: 8px; margin-top: 8px; display: none; }
+</style>
+</head>
+<body>
+<h1>🔬 SafeBite — Diagnóstico Cámara</h1>
+<p class="sub">Carga esta página en el móvil desde alergenosplus.netlify.app/debug.html</p>
+
+<div class="card">
+  <h2>1. Test función (sin imagen)</h2>
+  <button class="btn" onclick="testFunction()">Probar /.netlify/functions/test</button>
+</div>
+
+<div class="card">
+  <h2>2. Seleccionar imagen y analizar</h2>
+  <button class="btn" onclick="document.getElementById('camInput').click()">📸 Cámara</button>
+  <button class="btn btn-sec" onclick="document.getElementById('galInput').click()">🖼️ Galería</button>
+  <input type="file" id="camInput" accept="image/*" capture="environment">
+  <input type="file" id="galInput" accept="image/*">
+  <img id="preview" alt="preview"/>
+</div>
+
+<div class="card">
+  <h2>3. Log de diagnóstico</h2>
+  <div class="log" id="log"><span class="step">Esperando acción...</span></div>
+</div>
+
+<script>
+const log = document.getElementById('log');
+function L(msg, cls='step') {
+  const t = new Date().toLocaleTimeString('es', {hour12:false});
+  log.innerHTML += `\n<span class="${cls}">[${t}] ${msg}</span>`;
+  log.scrollTop = log.scrollHeight;
+}
+function Lclr() { log.innerHTML = ''; }
+
+// ── Test función ──────────────────────────────────────────────────────────────
+async function testFunction() {
+  Lclr();
+  L('Llamando a /.netlify/functions/test...', 'info');
+  try {
+    const r = await fetch('/.netlify/functions/test');
+    L(`Status: ${r.status} ${r.statusText}`, r.ok ? 'ok' : 'err');
+    const ct = r.headers.get('content-type');
+    L(`Content-Type: ${ct}`, ct?.includes('json') ? 'ok' : 'warn');
+    const txt = await r.text();
+    L(`Respuesta: ${txt.substring(0, 200)}`, 'ok');
+  } catch(e) {
+    L(`ERROR: ${e.message}`, 'err');
+  }
+}
+
+// ── Procesar imagen ───────────────────────────────────────────────────────────
+async function processImage(file) {
+  Lclr();
+  L(`Archivo: ${file.name}`, 'info');
+  L(`Tamaño original: ${(file.size/1024).toFixed(1)} KB`, 'info');
+  L(`Tipo: ${file.type}`, 'info');
+
+  // Mostrar preview
+  const prev = document.getElementById('preview');
+  prev.src = URL.createObjectURL(file);
+  prev.style.display = 'block';
+
+  // Step 1: Comprimir
+  L('── PASO 1: Comprimiendo imagen...', 'step');
+  let dataUrl;
+  try {
+    dataUrl = await compressImageFromFile(file);
+    const sizeKB = (dataUrl.length / 1024).toFixed(1);
+    const sizeMB = (dataUrl.length / 1024 / 1024).toFixed(2);
+    L(`✓ Comprimida: ${sizeKB} KB base64 (${sizeMB} MB)`, dataUrl.length < 900000 ? 'ok' : 'err');
+    if (dataUrl.length > 900000) {
+      L('⚠️ DEMASIADO GRANDE — supera el límite de ~900KB de Netlify', 'err');
+    }
+    L(`Empieza con: ${dataUrl.substring(0, 40)}`, 'step');
+  } catch(e) {
+    L(`ERROR comprimiendo: ${e.message}`, 'err');
+    return;
+  }
+
+  // Step 2: Enviar a la función
+  L('── PASO 2: Enviando a /.netlify/functions/analyze...', 'step');
+  const bodyObj = {
+    imageDataUrl: dataUrl,
+    allergens: [{label:'Gluten', severity:'grave'}, {label:'Leche', severity:'moderada'}],
+    childName: 'Test',
+    mode: 'label'
+  };
+  const bodyStr = JSON.stringify(bodyObj);
+  L(`Tamaño del body JSON: ${(bodyStr.length/1024).toFixed(1)} KB`, 'info');
+
+  const t0 = Date.now();
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 28000);
+
+    L('Fetch iniciado...', 'step');
+    const res = await fetch('/.netlify/functions/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: bodyStr
+    });
+    clearTimeout(tid);
+
+    const elapsed = ((Date.now()-t0)/1000).toFixed(1);
+    L(`✓ Respuesta en ${elapsed}s`, 'ok');
+    L(`Status: ${res.status} ${res.statusText}`, res.ok ? 'ok' : 'err');
+
+    const ct = res.headers.get('content-type') || '';
+    L(`Content-Type: ${ct}`, ct.includes('json') ? 'ok' : 'err');
+
+    if (!ct.includes('json')) {
+      const txt = await res.text();
+      L(`⚠️ RESPUESTA HTML (no JSON) — primeros 300 chars:`, 'err');
+      L(txt.substring(0, 300).replace(/</g,'&lt;'), 'err');
+      return;
+    }
+
+    const data = await res.json();
+    if (data.error) {
+      L(`Error de la función: ${data.error}`, 'err');
+    } else {
+      L(`✓ STATUS: ${data.status}`, 'ok');
+      L(`✓ Explicación: ${data.explanation?.substring(0, 100)}`, 'ok');
+    }
+
+  } catch(e) {
+    const elapsed = ((Date.now()-t0)/1000).toFixed(1);
+    if (e.name === 'AbortError') {
+      L(`TIMEOUT tras ${elapsed}s — la función no responde`, 'err');
+    } else {
+      L(`ERROR fetch: ${e.message} (tras ${elapsed}s)`, 'err');
+    }
+  }
+}
+
+// ── Compresión ────────────────────────────────────────────────────────────────
+function compressImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const MAX = 600;
+      let {width, height} = img;
+      if (width > height) {
+        if (width > MAX) { height = Math.round(height*MAX/width); width = MAX; }
+      } else {
+        if (height > MAX) { width = Math.round(width*MAX/height); height = MAX; }
+      }
+      L(`Dimensiones tras resize: ${width}x${height}px`, 'step');
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      let result = canvas.toDataURL('image/jpeg', 0.6);
+      L(`Base64 tras primera compresión: ${(result.length/1024).toFixed(1)} KB`, 'step');
+      if (result.length > 500000) {
+        L('Aplicando segunda compresión...', 'warn');
+        const scale = Math.sqrt(450000/result.length);
+        const c2 = document.createElement('canvas');
+        c2.width = Math.round(width*scale); c2.height = Math.round(height*scale);
+        c2.getContext('2d').drawImage(img, 0, 0, c2.width, c2.height);
+        result = c2.toDataURL('image/jpeg', 0.55);
+        L(`Base64 tras segunda compresión: ${(result.length/1024).toFixed(1)} KB`, 'step');
+      }
+      resolve(result);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo cargar')); };
+    img.src = url;
+  });
+}
+
+document.getElementById('camInput').addEventListener('change', e => {
+  if (e.target.files[0]) processImage(e.target.files[0]);
+});
+document.getElementById('galInput').addEventListener('change', e => {
+  if (e.target.files[0]) processImage(e.target.files[0]);
+});
+</script>
+</body>
+</html>
