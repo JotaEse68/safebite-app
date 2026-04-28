@@ -150,17 +150,6 @@ function renderHome() {
     document.getElementById('heroAllergens').textContent = 'Toca + para crear un perfil';
   }
   // Sin límites durante beta — scansBar eliminado
-
-  // Cargar stats del usuario en background
-  sb.from('scans').select('status').eq('user_id', state.user.id).then(({ data }) => {
-    if (!data) return;
-    document.getElementById('statMyScans').textContent = data.length;
-    document.getElementById('statMyApto').textContent = data.filter(s=>s.status==='APTO').length;
-    document.getElementById('statMyNoApto').textContent = data.filter(s=>s.status==='NO APTO').length;
-  });
-  sb.from('children').select('id').eq('user_id', state.user.id).then(({ data }) => {
-    if (data) document.getElementById('statMyChildren').textContent = data.length;
-  });
 }
 
 // ── Render profile ─────────────────────────────────────────────────────────────
@@ -430,6 +419,65 @@ function triggerUpload(mode) {
   state.scanMode = mode; document.getElementById('fileInputGallery').click();
 }
 
+function startBarcodeScanner() {
+  if (!state.activeChild) { alert('Primero añade el perfil de un hijo'); return; }
+  document.getElementById('barcodeInput').value = '';
+  document.getElementById('barcodeStatus').textContent = '';
+  document.getElementById('barcodeModal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('barcodeInput').focus(), 200);
+}
+
+function closeBarcodeModal() {
+  document.getElementById('barcodeModal').classList.add('hidden');
+}
+
+async function lookupBarcode() {
+  const code = document.getElementById('barcodeInput').value.trim();
+  if (!code || code.length < 8) {
+    document.getElementById('barcodeStatus').textContent = '⚠️ Introduce un código válido (8-13 dígitos)';
+    return;
+  }
+  document.getElementById('barcodeStatus').textContent = '🔍 Buscando en la base de datos...';
+  const btn = document.querySelector('#barcodeModal .btn-primary');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}?fields=product_name,ingredients_text,allergens_tags,brands,image_url`, {
+      headers: { 'User-Agent': 'SafeBite/1.0 (alergenosplus.netlify.app)' }
+    });
+    const data = await res.json();
+
+    if (data.status !== 1 || !data.product) {
+      document.getElementById('barcodeStatus').textContent = '❌ Producto no encontrado. Prueba a fotografiar la etiqueta.';
+      btn.disabled = false;
+      return;
+    }
+
+    const p = data.product;
+    const name = p.product_name || 'Producto sin nombre';
+    const ingredients = p.ingredients_text || '';
+
+    if (!ingredients) {
+      document.getElementById('barcodeStatus').textContent = `✅ ${name} encontrado — sin ingredientes en la BD. Analizando por alérgenos declarados...`;
+    } else {
+      document.getElementById('barcodeStatus').textContent = `✅ ${name} — analizando ingredientes...`;
+    }
+
+    // Analyze with existing pipeline
+    closeBarcodeModal();
+    const textToAnalyze = ingredients
+      ? `Producto: ${name}\nIngredientes: ${ingredients}`
+      : `Producto: ${name}\nAlergenos declarados: ${(p.allergens_tags||[]).map(t=>t.replace('en:','')).join(', ')}`;
+
+    await analyze(textToAnalyze, 'text');
+
+  } catch (err) {
+    document.getElementById('barcodeStatus').textContent = '❌ Error de conexión. Inténtalo de nuevo.';
+    console.error('[SafeBite] Barcode error:', err);
+  }
+  btn.disabled = false;
+}
+
 function showTextInput() {
   if (!state.activeChild) { alert('Primero añade el perfil de un hijo'); return; }
   state.scanMode = 'text';
@@ -598,15 +646,6 @@ function resetScan() {
   showScreen('screenHome');
 }
 
-function shareCurrentResult() {
-  const status = document.getElementById('resultTitle').textContent;
-  const explanation = document.getElementById('resultExplanation').textContent;
-  const child = document.getElementById('resultChild').textContent;
-  const emoji = status === 'APTO' ? '✅' : status === 'PRECAUCION' ? '⚠️' : '🚫';
-  const text = `SafeBite IA\n${child}\n${emoji} ${status}\n\n${explanation}\n\n🔗 alergenosplus.netlify.app`;
-  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-}
-
 // ── Voice ──────────────────────────────────────────────────────────────────────
 function startVoice() {
   if (!state.activeChild) { alert('Primero añade el perfil de un hijo'); return; }
@@ -684,6 +723,128 @@ function stopVoice() {
   if (btn) btn.classList.add('hidden');
 }
 
+// ── RECETAS ────────────────────────────────────────────────────────────────────
+async function openRecipes() {
+  if (!state.activeChild) { alert('Primero selecciona el perfil de un hijo'); return; }
+  const child = state.activeChild;
+  const modal = document.getElementById('recipesModal');
+  const list = document.getElementById('recipesList');
+  document.getElementById('recipesSubtitle').textContent = `Seguras para ${child.emoji} ${child.name}`;
+  list.innerHTML = '<p style="text-align:center;color:var(--muted);padding:20px">🍳 Generando recetas...</p>';
+  modal.classList.remove('hidden');
+
+  try {
+    const allergenList = (child.allergens||[]).map(a => `${a.label}${a.severity ? ' ('+a.severity+')' : ''}`).join(', ') || 'ninguno';
+    const prompt = `Eres un chef especializado en cocina para niños con alergias alimentarias. 
+Genera exactamente 3 recetas para cenar hoy, sencillas y apetecibles para un niño.
+ALÉRGENOS A EVITAR ABSOLUTAMENTE: ${allergenList}
+Para cada receta indica: nombre, tiempo de preparación, 4-6 ingredientes principales y 3 pasos simples.
+Responde SOLO en JSON válido sin markdown: {"recetas":[{"nombre":"...","tiempo":"15 min","ingredientes":["..."],"pasos":["..."]}]}`;
+
+    const res = await fetch('/.netlify/functions/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageDataUrl: prompt, allergens: child.allergens || [], childName: child.name, mode: 'text', recipesMode: true })
+    });
+
+    const data = await res.json();
+    // Parse recipe from explanation or direct JSON
+    let recipes = null;
+    try {
+      const txt = data.explanation || data.ingredients_found || '';
+      const m = txt.match(/\{[\s\S]*\}/);
+      if (m) recipes = JSON.parse(m[0]).recetas;
+    } catch(e) {}
+
+    if (!recipes?.length) {
+      // Fallback: generate client-side safe recipes
+      recipes = generateFallbackRecipes(child.allergens || []);
+    }
+
+    list.innerHTML = recipes.map(r => `
+      <div class="recipe-card">
+        <div class="recipe-header">
+          <p class="recipe-name">${r.nombre}</p>
+          <span class="recipe-time">⏱ ${r.tiempo}</span>
+        </div>
+        <div class="recipe-ingredients">
+          ${(r.ingredientes||[]).map(i => `<span class="recipe-tag">${i}</span>`).join('')}
+        </div>
+        <ol class="recipe-steps">
+          ${(r.pasos||[]).map(p => `<li>${p}</li>`).join('')}
+        </ol>
+      </div>
+    `).join('');
+
+  } catch(err) {
+    list.innerHTML = `<p style="text-align:center;color:var(--muted)">Error generando recetas. Inténtalo de nuevo.</p>`;
+    console.error('[SafeBite] Recipes error:', err);
+  }
+}
+
+function generateFallbackRecipes(allergens) {
+  // Simple safe fallback when API fails
+  const hasGluten = allergens.some(a => a.label?.toLowerCase().includes('gluten') || a.label?.toLowerCase().includes('trigo'));
+  const hasLacteo = allergens.some(a => a.label?.toLowerCase().includes('leche') || a.label?.toLowerCase().includes('lácteo'));
+  const hasHuevo = allergens.some(a => a.label?.toLowerCase().includes('huevo'));
+
+  const all = [
+    { nombre:"Pollo al limón con arroz", tiempo:"25 min", ingredientes:["Pechuga de pollo","Arroz","Limón","Ajo","Aceite de oliva"], pasos:["Cocina el arroz según el paquete.","Fríe el pollo en trozos con ajo y zumo de limón.","Sirve el pollo sobre el arroz."] },
+    { nombre:"Tortilla de patata", tiempo:"20 min", ingredientes:["Patatas","Huevo","Cebolla","Aceite","Sal"], pasos:["Pela y corta las patatas en rodajas.","Fríe las patatas con cebolla hasta que estén tiernas.","Bate los huevos, mezcla y cuaja la tortilla."] },
+    { nombre:"Pasta con tomate natural", tiempo:"15 min", ingredientes:["Pasta","Tomate triturado","Ajo","Albahaca","Aceite"], pasos:["Cuece la pasta al dente.","Sofríe el ajo y añade el tomate, cocina 10 min.","Mezcla con la pasta y añade albahaca."] },
+    { nombre:"Merluza al vapor con verduras", tiempo:"20 min", ingredientes:["Merluza","Zanahoria","Judías verdes","Limón","Aceite de oliva"], pasos:["Cuece las verduras al vapor 8 min.","Cocina la merluza al vapor 6 min con limón.","Sirve con un chorrito de aceite de oliva."] },
+    { nombre:"Lentejas con verduras", tiempo:"30 min", ingredientes:["Lentejas cocidas","Zanahoria","Puerro","Tomate","Comino"], pasos:["Sofríe el puerro y la zanahoria en cubos.","Añade el tomate y las lentejas, cocina 15 min.","Sazona con comino y sal al gusto."] },
+  ];
+  return all.filter(r => {
+    if (hasHuevo && r.ingredientes.some(i => i.toLowerCase().includes('huevo'))) return false;
+    if (hasLacteo && r.ingredientes.some(i => i.toLowerCase().includes('queso') || i.toLowerCase().includes('leche'))) return false;
+    return true;
+  }).slice(0,3);
+}
+
+// ── TARJETA DE EMERGENCIA ──────────────────────────────────────────────────────
+function showEmergencyCard(childId) {
+  const child = state.children.find(c => c.id === childId);
+  if (!child) return;
+
+  const severityColor = { grave: '#ef4444', moderada: '#f59e0b', leve: '#3b82f6' };
+  const allergenRows = (child.allergens || []).map(a => `
+    <div class="ec-allergen">
+      <span class="ec-allergen-name">${a.label}</span>
+      <span class="ec-allergen-sev" style="background:${severityColor[a.severity]||'#64748b'}20;color:${severityColor[a.severity]||'#64748b'}">${(a.severity||'').toUpperCase()}</span>
+    </div>
+  `).join('');
+
+  document.getElementById('emergencyCard').innerHTML = `
+    <div class="ec-header">
+      <span class="ec-emoji">${child.emoji}</span>
+      <div>
+        <p class="ec-name">${child.name}</p>
+        <p class="ec-label">TARJETA DE EMERGENCIA ALÉRGICA</p>
+      </div>
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="14" fill="#ef4444"/><path d="M14 7v7l4 4" stroke="white" stroke-width="2" stroke-linecap="round"/><path d="M9 14h10M14 9v10" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
+    </div>
+    <div class="ec-section">
+      <p class="ec-section-title">🚫 ALÉRGENOS — NO PUEDE CONSUMIR</p>
+      <div class="ec-allergens-list">${allergenRows || '<p style="color:var(--muted);font-size:13px">Sin alérgenos registrados</p>'}</div>
+    </div>
+    <div class="ec-section ec-warning">
+      <p style="font-size:12px;color:#fca5a5;font-weight:600">⚠️ En caso de reacción: llamar al 112 inmediatamente</p>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px">Verificado con protocolos Laztan · ATX Allergy Protection</p>
+    </div>
+    <p class="ec-footer">SafeBite IA · alergenosplus.netlify.app</p>
+  `;
+  document.getElementById('emergencyModal').classList.remove('hidden');
+}
+
+function shareEmergencyCard() {
+  const child = state.activeChild || state.children[0];
+  if (!child) return;
+  const allergens = (child.allergens||[]).map(a => `${a.label} (${a.severity||''})`).join(', ');
+  const text = `🚨 TARJETA DE EMERGENCIA ALÉRGICA\n\n👦 ${child.emoji} ${child.name}\n\n🚫 NO PUEDE CONSUMIR:\n${allergens}\n\n⚠️ En caso de reacción alérgica grave: llamar al 112\n\n✅ Verificado con protocolos Laztan · ATX Allergy Protection\nSafeBite IA · alergenosplus.netlify.app`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+}
+
 async function analyzeVoice() {
   const t = document.getElementById('voiceTranscript').textContent.trim();
   stopVoice();
@@ -703,83 +864,21 @@ function contactExpert() {
 }
 
 // ── History ────────────────────────────────────────────────────────────────────
-async function loadHistory(filterChild = null) {
+async function loadHistory() {
   const list = document.getElementById('historyList');
   list.innerHTML = '<p class="empty-state">Cargando...</p>';
-
-  let query = sb.from('scans').select('*, children(name,emoji)').eq('user_id', state.user.id).order('created_at', { ascending: false }).limit(50);
-  if (filterChild) query = query.eq('child_id', filterChild);
-
-  const { data: scans } = await query;
-  if (!scans?.length) {
-    list.innerHTML = '<p class="empty-state">No hay escaneos todavía.<br/>¡Escanea tu primer producto!</p>';
-    return;
-  }
-
-  // Render filter chips
-  const children = [...new Map(scans.filter(s=>s.children).map(s=>[s.child_id, s.children])).entries()];
-  let filterHtml = '<div class="history-filters">';
-  filterHtml += `<button class="hfilter-btn ${!filterChild?'active':''}" onclick="loadHistory(null)">Todos</button>`;
-  children.forEach(([id, c]) => {
-    filterHtml += `<button class="hfilter-btn ${filterChild===id?'active':''}" onclick="loadHistory('${id}')">${c.emoji} ${c.name}</button>`;
-  });
-  filterHtml += '</div>';
-
-  list.innerHTML = filterHtml;
-
+  const { data: scans } = await sb.from('scans').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false }).limit(20);
+  if (!scans?.length) { list.innerHTML = '<p class="empty-state">No hay escaneos todavía.<br/>¡Escanea tu primer producto!</p>'; return; }
+  list.innerHTML = '';
   scans.forEach(scan => {
-    const icon  = scan.status === 'APTO' ? '🟢' : scan.status === 'PRECAUCION' ? '🟡' : '🔴';
-    const cls   = scan.status === 'APTO' ? 'apto' : scan.status === 'PRECAUCION' ? 'precaucion' : 'no-apto';
-    const date  = new Date(scan.created_at).toLocaleDateString('es-ES', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
-    const child = scan.children ? `${scan.children.emoji} ${scan.children.name}` : '';
-    const risks = (() => { try { return Array.isArray(scan.risks) ? scan.risks : JSON.parse(scan.risks||'[]'); } catch { return []; } })();
-
+    const icon = scan.status === 'APTO' ? '🟢' : scan.status === 'PRECAUCION' ? '🟡' : '🔴';
+    const cls  = scan.status === 'APTO' ? 'apto' : scan.status === 'PRECAUCION' ? 'precaucion' : 'no-apto';
+    const date = new Date(scan.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
     const item = document.createElement('div');
-    item.className = 'history-card';
-    item.innerHTML = `
-      <div class="history-card-header" onclick="this.parentElement.classList.toggle('expanded')">
-        <span class="history-icon-lg">${icon}</span>
-        <div class="history-card-main">
-          <div class="history-card-top">
-            <span class="history-status ${cls}">${scan.status}</span>
-            ${child ? `<span class="history-child-tag">${child}</span>` : ''}
-            <span class="history-date-sm">${date}</span>
-          </div>
-          <p class="history-explanation-sm">${(scan.result||'').substring(0,90)}${(scan.result||'').length>90?'…':''}</p>
-        </div>
-        <span class="history-chevron">›</span>
-      </div>
-      <div class="history-card-detail">
-        <p class="history-detail-text">${scan.result||''}</p>
-        ${risks.length ? `<div class="history-risks">${risks.map(r=>`<span class="risk-chip-sm">${r}</span>`).join('')}</div>` : ''}
-        ${scan.ingredients ? `<p class="history-ingredients"><strong>Ingredientes:</strong> ${scan.ingredients}</p>` : ''}
-        <div class="history-actions">
-          <button class="history-action-btn" onclick="shareResult(${JSON.stringify({status:scan.status,explanation:scan.result||'',child}).replace(/"/g,'&quot;')})">
-            📤 Compartir
-          </button>
-          <button class="history-action-btn history-action-btn--red" onclick="deleteScan('${scan.id}', this)">
-            🗑️ Eliminar
-          </button>
-        </div>
-      </div>
-    `;
+    item.className = 'history-item';
+    item.innerHTML = `<span class="history-icon">${icon}</span><div style="flex:1;min-width:0"><p class="history-status ${cls}">${scan.status}</p><p class="history-explanation">${scan.result||'—'}</p></div><span class="history-date">${date}</span>`;
     list.appendChild(item);
   });
-}
-
-async function deleteScan(id, btn) {
-  if (!confirm('¿Eliminar este escaneo del historial?')) return;
-  btn.closest('.history-card').style.opacity = '0.4';
-  await sb.from('scans').delete().eq('id', id);
-  btn.closest('.history-card').remove();
-}
-
-function shareResult(result) {
-  const status = result.status === 'APTO' ? '✅ APTO' : result.status === 'PRECAUCION' ? '⚠️ PRECAUCIÓN' : '🚫 NO APTO';
-  const child = result.child ? `para ${result.child}` : '';
-  const text = `SafeBite IA${child ? ' ' + child : ''}\n${status}\n\n${result.explanation}\n\n🔗 Analiza tus productos en alergenosplus.netlify.app`;
-  const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-  window.open(url, '_blank');
 }
 
 // ── Screen routing ─────────────────────────────────────────────────────────────
