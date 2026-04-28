@@ -450,22 +450,36 @@ async function analyzeText() {
 async function analyze(data, mode) {
   if (!checkScanLimit()) return;
   showLoading(mode === 'menu' ? 'Analizando menú...' : 'Analizando ingredientes...', 'IA con protocolos Laztan');
+
+  const setStatus = (msg) => {
+    const el = document.getElementById('scanStatus');
+    if (el) el.textContent = msg;
+  };
+
   try {
-    // Check image size before sending (base64 > 900KB = probable timeout)
     if (mode !== 'text' && data.length > 900000) {
-      throw new Error('Imagen demasiado grande. Fotografía solo la etiqueta de ingredientes, más cerca y con buena luz.');
+      throw new Error('Imagen demasiado grande. Usa la galería con una foto existente.');
     }
 
-    // Load admin docs context (Laztan knowledge base)
-    const { data: adminDocs } = await sb.from('documents').select('name, path').eq('type', 'admin').limit(5);
-    // Load child docs context
-    const childDocs = state.activeChild
-      ? (await sb.from('documents').select('name, path').eq('child_id', state.activeChild.id).limit(3)).data || []
-      : [];
+    // Cargar docs con timeout propio de 5s — no bloquea si Supabase tarda
+    let adminDocNames = [], childDocNames = [];
+    try {
+      const docsTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000));
+      const [adminRes, childRes] = await Promise.all([
+        Promise.race([sb.from('documents').select('name').eq('type', 'admin').limit(5), docsTimeout]),
+        state.activeChild
+          ? Promise.race([sb.from('documents').select('name').eq('child_id', state.activeChild.id).limit(3), docsTimeout])
+          : Promise.resolve({ data: [] })
+      ]);
+      adminDocNames = (adminRes?.data || []).map(d => d.name);
+      childDocNames = (childRes?.data || []).map(d => d.name);
+    } catch(e) {
+      console.warn('[SafeBite] Docs carga fallida (no crítico):', e.message);
+    }
 
-    // AbortController para timeout de 25 segundos
+    // Llamar a la función con timeout de 28s
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const timeoutId = setTimeout(() => controller.abort(), 28000);
 
     let res;
     try {
@@ -478,32 +492,36 @@ async function analyze(data, mode) {
           allergens: state.activeChild?.allergens || [],
           childName: state.activeChild?.name || 'tu hijo',
           mode,
-          adminDocNames: (adminDocs || []).map(d => d.name),
-          childDocNames: childDocs.map(d => d.name),
+          adminDocNames,
+          childDocNames,
         }),
       });
     } finally {
       clearTimeout(timeoutId);
     }
 
-    // Detectar si Netlify devuelve HTML en vez de JSON (función no encontrada)
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
-      const text = await res.text();
-      console.error('Respuesta no-JSON de la función:', text.substring(0, 200));
-      throw new Error('Error de configuración del servidor. Contacta con soporte.');
+      throw new Error('Error de servidor. Inténtalo de nuevo.');
     }
 
     const result = await res.json();
     if (!res.ok || result.error) throw new Error(result.error || 'Error en el análisis');
-    hideLoading(); showResult(result);
-    saveScan(result).catch(e => console.warn('[SafeBite] saveScan bg error:', e.message));
-    incrementScans().catch(e => console.warn('[SafeBite] incrementScans bg error:', e.message));
+
+    // Mostrar resultado PRIMERO — guardar en segundo plano
+    hideLoading();
+    setStatus('');
+    showResult(result);
+    saveScan(result).catch(e => console.warn('[SafeBite] saveScan:', e.message));
+    incrementScans().catch(e => console.warn('[SafeBite] incrementScans:', e.message));
+
   } catch (err) {
     hideLoading();
-    let msg = err.message;
-    if (err.name === 'AbortError') msg = 'Tiempo de espera agotado. Inténtalo de nuevo.';
-    document.getElementById('scanStatus').textContent = '⚠️ ' + msg;
+    const msg = err.name === 'AbortError'
+      ? 'Sin respuesta tras 28s. Comprueba tu conexión e inténtalo de nuevo.'
+      : err.message;
+    setStatus('⚠️ ' + msg);
+    console.error('[SafeBite] analyze error:', err);
   }
 }
 
