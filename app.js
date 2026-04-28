@@ -50,6 +50,15 @@ let state = {
   renderEmojiPicker();
   renderAllergenGrid();
   document.getElementById('fileInput').addEventListener('change', handleFileInput);
+  document.getElementById('fileInputGallery').addEventListener('change', handleFileInput);
+  // Inyectar estilos del banner
+  const bannerStyle = document.createElement('style');
+  bannerStyle.textContent = `
+    .app-banner { width:100%; padding:8px 16px 0; box-sizing:border-box; }
+    .app-banner-img { width:100%; height:auto; border-radius:12px; display:block; object-fit:cover; max-height:90px; }
+    .app-banner--result { padding:16px 16px 0; }
+  `;
+  document.head.appendChild(bannerStyle);
 })();
 
 // ── Auth ───────────────────────────────────────────────────────────────────────
@@ -140,9 +149,7 @@ function renderHome() {
     document.getElementById('heroBadgeEmoji').textContent = '👶';
     document.getElementById('heroAllergens').textContent = 'Toca + para crear un perfil';
   }
-  const left = Math.max(0, 5 - (state.profile?.scans_this_month || 0));
-  document.getElementById('scansText').textContent = `${left} escaneos disponibles este mes`;
-  document.getElementById('planBadge').textContent = state.profile?.plan === 'premium' ? 'PREMIUM ⭐' : 'GRATIS';
+  // Sin límites durante beta — scansBar eliminado
 }
 
 // ── Render profile ─────────────────────────────────────────────────────────────
@@ -407,6 +414,11 @@ function triggerCamera(mode) {
   state.scanMode = mode; document.getElementById('fileInput').click();
 }
 
+function triggerUpload(mode) {
+  if (!state.activeChild) { alert('Primero añade el perfil de un hijo'); return; }
+  state.scanMode = mode; document.getElementById('fileInputGallery').click();
+}
+
 function showTextInput() {
   if (!state.activeChild) { alert('Primero añade el perfil de un hijo'); return; }
   state.scanMode = 'text';
@@ -494,9 +506,7 @@ async function analyze(data, mode) {
 }
 
 function checkScanLimit() {
-  if (state.profile?.plan === 'premium') return true;
-  if ((state.profile?.scans_this_month || 0) >= 5) { alert('Límite de 5 escaneos gratuitos alcanzado. Actualiza a Premium para ilimitados.'); return false; }
-  return true;
+  return true; // Sin límites durante beta
 }
 
 async function incrementScans() {
