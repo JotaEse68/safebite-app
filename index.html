@@ -126,6 +126,10 @@
       </div>
     </header>
 
+    <div class="app-banner">
+      <img src="https://Aka625.b-cdn.net/Varios/bannersafebite%20.png" alt="SafeBite — IA para alergias" class="app-banner-img" onerror="this.parentElement.style.display='none'"/>
+    </div>
+
     <div class="child-bar" id="childBar">
       <div class="child-bar-inner" id="childBarInner"></div>
       <button class="child-add-btn" onclick="openAddChild()" title="Añadir hijo">+</button>
@@ -147,18 +151,18 @@
       <div class="scan-grid">
         <button class="scan-btn" onclick="triggerCamera('label')">
           <span class="scan-btn-icon">📸</span>
-          <span class="scan-btn-text">Etiqueta</span>
+          <span class="scan-btn-text">Cámara</span>
           <span class="scan-btn-sub">Foto del producto</span>
+        </button>
+        <button class="scan-btn" onclick="triggerUpload('label')">
+          <span class="scan-btn-icon">🖼️</span>
+          <span class="scan-btn-text">Galería</span>
+          <span class="scan-btn-sub">Sube una imagen</span>
         </button>
         <button class="scan-btn" onclick="triggerCamera('menu')">
           <span class="scan-btn-icon">🍽️</span>
           <span class="scan-btn-text">Menú</span>
           <span class="scan-btn-sub">Restaurante</span>
-        </button>
-        <button class="scan-btn" onclick="startVoice()">
-          <span class="scan-btn-icon">🎤</span>
-          <span class="scan-btn-text">Voz</span>
-          <span class="scan-btn-sub">Pregunta algo</span>
         </button>
         <button class="scan-btn" onclick="showTextInput()">
           <span class="scan-btn-icon">✏️</span>
@@ -182,10 +186,7 @@
       <p id="scanStatus" class="scan-status"></p>
     </div>
 
-    <div class="scans-bar" id="scansBar">
-      <span id="scansText">5 escaneos disponibles este mes</span>
-      <span class="plan-badge" id="planBadge">GRATIS</span>
-    </div>
+    <!-- scansBar eliminado — sin límites durante beta -->
 
     <!-- Próximamente -->
     <div class="coming-soon-card">
@@ -223,6 +224,7 @@
     </div>
 
     <input type="file" id="fileInput" accept="image/*" capture="environment" hidden/>
+    <input type="file" id="fileInputGallery" accept="image/*" hidden/>
   </div>
 </div>
 
@@ -260,6 +262,9 @@
       <div class="laztan-badge">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="8" fill="#7ed957" opacity=".2"/><path d="M4 8.5l2.5 2.5 5.5-5.5" stroke="#7ed957" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Análisis validado con protocolos <strong>Laztan</strong></span>
+      </div>
+      <div class="app-banner app-banner--result">
+        <img src="https://Aka625.b-cdn.net/Varios/bannersafebite%20.png" alt="SafeBite" class="app-banner-img" onerror="this.parentElement.style.display='none'"/>
       </div>
       <button class="btn-primary" onclick="resetScan()">Escanear otro producto</button>
       <button class="btn-whatsapp" onclick="contactExpert()">
@@ -339,6 +344,9 @@
       </div>
       <div class="children-list" id="profileChildrenList"></div>
       <button class="btn-secondary" onclick="logout()">Cerrar sesión</button>
+      <div class="app-banner" style="margin-top:8px">
+        <img src="https://Aka625.b-cdn.net/Varios/bannersafebite%20.png" alt="SafeBite" class="app-banner-img" onerror="this.parentElement.style.display='none'"/>
+      </div>
       <div class="laztan-trust">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="10" fill="#7ed957" opacity=".15"/><path d="M6 10.5l3 3 5.5-6" stroke="#7ed957" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <div>
