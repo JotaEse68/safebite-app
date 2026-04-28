@@ -483,7 +483,7 @@ async function analyze(data, mode) {
 
     let res;
     try {
-      res = await fetch('/.netlify/functions/analyze', {
+      res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
@@ -592,56 +592,72 @@ function startVoice() {
   if (!state.activeChild) { alert('Primero añade el perfil de un hijo'); return; }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
-    // Fallback: abrir modo texto con instrucciones
     document.getElementById('textInputArea').classList.remove('hidden');
-    document.getElementById('manualText').placeholder = 'Dicta o escribe los ingredientes aquí...';
+    document.getElementById('manualText').placeholder = 'Escribe los ingredientes aquí...';
     document.getElementById('manualText').focus();
     return;
   }
-  state.recognition = new SR();
-  state.recognition.lang = 'es-ES';
-  state.recognition.continuous = true;
-  state.recognition.interimResults = true;
-  let finalText = '';
+
+  let accumulated = '';
+  let restartTimer = null;
+  state.voiceActive = true;
+
+  const updateUI = (interim = '') => {
+    const full = (accumulated + ' ' + interim).trim();
+    document.getElementById('voiceTranscript').textContent = full;
+    const btn = document.getElementById('voiceAnalyzeBtn');
+    if (accumulated.trim().length > 8) {
+      btn.classList.remove('hidden');
+      document.getElementById('voiceStatus').textContent = '✅ Pulsa Analizar o sigue hablando';
+    } else {
+      btn.classList.add('hidden');
+      document.getElementById('voiceStatus').textContent = '🎤 Escuchando... dicta los ingredientes';
+    }
+  };
+
+  const startRec = () => {
+    if (!state.voiceActive) return;
+    try {
+      const rec = new SR();
+      state.recognition = rec;
+      rec.lang = 'es-ES';
+      rec.continuous = false;
+      rec.interimResults = true;
+      rec.onresult = e => {
+        let interim = '';
+        for (const r of e.results) {
+          if (r.isFinal) accumulated += ' ' + r[0].transcript;
+          else interim += r[0].transcript;
+        }
+        updateUI(interim);
+      };
+      rec.onerror = (e) => {
+        if (e.error === 'no-speech') {
+          updateUI();
+        } else if (e.error !== 'aborted') {
+          console.warn('Voice error:', e.error);
+        }
+      };
+      rec.onend = () => {
+        if (state.voiceActive) {
+          restartTimer = setTimeout(startRec, 300);
+        }
+      };
+      rec.start();
+    } catch(e) { console.warn('startRec error:', e); }
+  };
+
   document.getElementById('voiceUI').classList.remove('hidden');
   document.getElementById('textInputArea').classList.add('hidden');
   document.getElementById('voiceTranscript').textContent = '';
-  document.getElementById('voiceStatus').textContent = '🎤 Habla ahora — dicta los ingredientes';
-  state.recognition.onresult = e => {
-    let interim = '';
-    finalText = '';
-    for (let r of e.results) {
-      if (r.isFinal) finalText += r[0].transcript + ' ';
-      else interim += r[0].transcript;
-    }
-    document.getElementById('voiceTranscript').textContent = (finalText + interim).trim();
-  };
-  state.recognition.onerror = (e) => {
-    console.warn('Voice error:', e.error);
-    if (e.error === 'no-speech') {
-      document.getElementById('voiceStatus').textContent = '⚠️ No te escucho. Habla más cerca del micrófono.';
-    } else {
-      stopVoice();
-    }
-  };
-  state.recognition.onend = () => {
-    // Si continuous mode termina inesperadamente, reiniciar
-    if (document.getElementById('voiceUI').classList.contains('hidden') === false) {
-      const t = document.getElementById('voiceTranscript').textContent.trim();
-      if (t.length > 10) {
-        // Hay texto suficiente — mostrar botón analizar
-        document.getElementById('voiceStatus').textContent = '✅ ¿Es correcto? Pulsa Analizar';
-        document.getElementById('voiceAnalyzeBtn').classList.remove('hidden');
-      } else {
-        try { state.recognition.start(); } catch(e) {}
-      }
-    }
-  };
-  state.recognition.start();
+  document.getElementById('voiceAnalyzeBtn').classList.add('hidden');
+  updateUI();
+  startRec();
   document.getElementById('voiceStatus').textContent = 'Escuchando... habla ahora';
 }
 
 function stopVoice() {
+  state.voiceActive = false;
   if (state.recognition) { try { state.recognition.stop(); } catch(e) {} state.recognition = null; }
   document.getElementById('voiceUI').classList.add('hidden');
   const btn = document.getElementById('voiceAnalyzeBtn');
@@ -654,7 +670,7 @@ async function analyzeVoice() {
   if (t.length > 3) {
     document.getElementById('manualText').value = t;
     document.getElementById('textInputArea').classList.remove('hidden');
-    document.getElementById('scanStatus').textContent = '✏️ Revisa el texto dictado y pulsa Analizar, o corrígelo si algo está mal.';
+    document.getElementById('scanStatus').textContent = '✏️ Revisa y pulsa Analizar, o corrígelo.';
   }
 }
 
