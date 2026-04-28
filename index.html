@@ -178,9 +178,13 @@
 
       <div id="voiceUI" class="voice-ui hidden">
         <div class="voice-pulse"></div>
-        <p id="voiceStatus">Escuchando...</p>
+        <p id="voiceStatus">🎤 Habla ahora — dicta los ingredientes</p>
         <p id="voiceTranscript" class="voice-transcript"></p>
-        <button class="btn-secondary" onclick="stopVoice()">Detener</button>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn-secondary" onclick="stopVoice()" style="flex:1">Cancelar</button>
+          <button id="voiceAnalyzeBtn" class="btn-primary hidden" onclick="analyzeVoice()" style="flex:2">✅ Analizar</button>
+        </div>
+        <p style="font-size:11px;color:#888;margin-top:6px;text-align:center">Tip: dicta lentamente los ingredientes que lees en la etiqueta</p>
       </div>
 
       <p id="scanStatus" class="scan-status"></p>
