@@ -66,12 +66,14 @@ exports.handler = async (event) => {
       headers: { "Authorization": `Bearer ${openaiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        max_tokens: 300,
+        max_tokens: 800,
         messages: [{
           role: "user",
           content: [
-            { type: "text", text: mode === "menu" ? "Transcribe todos los ingredientes y platos de este menú. Solo el texto, sin análisis." : "Transcribe SOLO la lista de ingredientes de esta etiqueta. Solo el texto exacto, sin análisis." },
-            { type: "image_url", image_url: { url: imageDataUrl, detail: "low" } }
+            { type: "text", text: mode === "menu"
+              ? "Eres un lector OCR experto. Transcribe TODO el texto visible en esta imagen de menú de restaurante: nombres de platos, ingredientes, alérgenos, descripciones. Si la imagen es de una pantalla o PDF, esfuérzate en leer incluso el texto pequeño. Devuelve solo el texto transcrito, sin análisis ni comentarios."
+              : "Eres un lector OCR experto especializado en etiquetas alimentarias. Transcribe EXACTAMENTE la lista completa de ingredientes de esta etiqueta. Si es una foto de pantalla o PDF, lee igualmente todo el texto. Incluye porcentajes, aditivos (E-xxx) y cualquier mención de alérgenos. Devuelve solo el texto, sin análisis." },
+            { type: "image_url", image_url: { url: imageDataUrl, detail: "high" } }
           ]
         }]
       })
@@ -82,7 +84,7 @@ exports.handler = async (event) => {
     ingredientsText = ocrData.choices?.[0]?.message?.content || "";
 
     if (!ingredientsText || ingredientsText.length < 5) {
-      return { statusCode: 200, headers, body: JSON.stringify({ status: "PRECAUCION", confidence: "baja", explanation: "No pude leer los ingredientes. Fotografía directamente la lista de ingredientes del envase con buena luz.", risks: [], hidden_allergens: [], traces_warning: false, ingredients_found: "" }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ status: "PRECAUCION", confidence: "baja", explanation: "No pude leer el texto de la imagen. Consejos: 1) Fotografía solo la etiqueta de ingredientes, 2) Asegúrate de que haya buena luz, 3) Si es una pantalla, aumenta el brillo al máximo, 4) Usa el modo Texto para pegar los ingredientes manualmente.", risks: ["Imagen ilegible — no se pueden verificar alérgenos"], hidden_allergens: [], traces_warning: false, ingredients_found: "" }) };
     }
 
     // Step 2: Claude analysis
@@ -111,7 +113,7 @@ exports.handler = async (event) => {
       headers: { "x-api-key": claudeKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 400,
+        max_tokens: 600,
         messages: [{ role: "user", content: `${allergenCtx}\n\n${RULES}\n\nINGREDIENTES EXTRAÍDOS:\n${ingredientsText}` }]
       })
     });
