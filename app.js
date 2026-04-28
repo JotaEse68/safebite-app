@@ -150,6 +150,17 @@ function renderHome() {
     document.getElementById('heroAllergens').textContent = 'Toca + para crear un perfil';
   }
   // Sin límites durante beta — scansBar eliminado
+
+  // Cargar stats del usuario en background
+  sb.from('scans').select('status').eq('user_id', state.user.id).then(({ data }) => {
+    if (!data) return;
+    document.getElementById('statMyScans').textContent = data.length;
+    document.getElementById('statMyApto').textContent = data.filter(s=>s.status==='APTO').length;
+    document.getElementById('statMyNoApto').textContent = data.filter(s=>s.status==='NO APTO').length;
+  });
+  sb.from('children').select('id').eq('user_id', state.user.id).then(({ data }) => {
+    if (data) document.getElementById('statMyChildren').textContent = data.length;
+  });
 }
 
 // ── Render profile ─────────────────────────────────────────────────────────────
@@ -587,6 +598,15 @@ function resetScan() {
   showScreen('screenHome');
 }
 
+function shareCurrentResult() {
+  const status = document.getElementById('resultTitle').textContent;
+  const explanation = document.getElementById('resultExplanation').textContent;
+  const child = document.getElementById('resultChild').textContent;
+  const emoji = status === 'APTO' ? '✅' : status === 'PRECAUCION' ? '⚠️' : '🚫';
+  const text = `SafeBite IA\n${child}\n${emoji} ${status}\n\n${explanation}\n\n🔗 alergenosplus.netlify.app`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+}
+
 // ── Voice ──────────────────────────────────────────────────────────────────────
 function startVoice() {
   if (!state.activeChild) { alert('Primero añade el perfil de un hijo'); return; }
@@ -683,21 +703,83 @@ function contactExpert() {
 }
 
 // ── History ────────────────────────────────────────────────────────────────────
-async function loadHistory() {
+async function loadHistory(filterChild = null) {
   const list = document.getElementById('historyList');
   list.innerHTML = '<p class="empty-state">Cargando...</p>';
-  const { data: scans } = await sb.from('scans').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false }).limit(20);
-  if (!scans?.length) { list.innerHTML = '<p class="empty-state">No hay escaneos todavía.<br/>¡Escanea tu primer producto!</p>'; return; }
-  list.innerHTML = '';
+
+  let query = sb.from('scans').select('*, children(name,emoji)').eq('user_id', state.user.id).order('created_at', { ascending: false }).limit(50);
+  if (filterChild) query = query.eq('child_id', filterChild);
+
+  const { data: scans } = await query;
+  if (!scans?.length) {
+    list.innerHTML = '<p class="empty-state">No hay escaneos todavía.<br/>¡Escanea tu primer producto!</p>';
+    return;
+  }
+
+  // Render filter chips
+  const children = [...new Map(scans.filter(s=>s.children).map(s=>[s.child_id, s.children])).entries()];
+  let filterHtml = '<div class="history-filters">';
+  filterHtml += `<button class="hfilter-btn ${!filterChild?'active':''}" onclick="loadHistory(null)">Todos</button>`;
+  children.forEach(([id, c]) => {
+    filterHtml += `<button class="hfilter-btn ${filterChild===id?'active':''}" onclick="loadHistory('${id}')">${c.emoji} ${c.name}</button>`;
+  });
+  filterHtml += '</div>';
+
+  list.innerHTML = filterHtml;
+
   scans.forEach(scan => {
-    const icon = scan.status === 'APTO' ? '🟢' : scan.status === 'PRECAUCION' ? '🟡' : '🔴';
-    const cls  = scan.status === 'APTO' ? 'apto' : scan.status === 'PRECAUCION' ? 'precaucion' : 'no-apto';
-    const date = new Date(scan.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+    const icon  = scan.status === 'APTO' ? '🟢' : scan.status === 'PRECAUCION' ? '🟡' : '🔴';
+    const cls   = scan.status === 'APTO' ? 'apto' : scan.status === 'PRECAUCION' ? 'precaucion' : 'no-apto';
+    const date  = new Date(scan.created_at).toLocaleDateString('es-ES', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+    const child = scan.children ? `${scan.children.emoji} ${scan.children.name}` : '';
+    const risks = (() => { try { return Array.isArray(scan.risks) ? scan.risks : JSON.parse(scan.risks||'[]'); } catch { return []; } })();
+
     const item = document.createElement('div');
-    item.className = 'history-item';
-    item.innerHTML = `<span class="history-icon">${icon}</span><div style="flex:1;min-width:0"><p class="history-status ${cls}">${scan.status}</p><p class="history-explanation">${scan.result||'—'}</p></div><span class="history-date">${date}</span>`;
+    item.className = 'history-card';
+    item.innerHTML = `
+      <div class="history-card-header" onclick="this.parentElement.classList.toggle('expanded')">
+        <span class="history-icon-lg">${icon}</span>
+        <div class="history-card-main">
+          <div class="history-card-top">
+            <span class="history-status ${cls}">${scan.status}</span>
+            ${child ? `<span class="history-child-tag">${child}</span>` : ''}
+            <span class="history-date-sm">${date}</span>
+          </div>
+          <p class="history-explanation-sm">${(scan.result||'').substring(0,90)}${(scan.result||'').length>90?'…':''}</p>
+        </div>
+        <span class="history-chevron">›</span>
+      </div>
+      <div class="history-card-detail">
+        <p class="history-detail-text">${scan.result||''}</p>
+        ${risks.length ? `<div class="history-risks">${risks.map(r=>`<span class="risk-chip-sm">${r}</span>`).join('')}</div>` : ''}
+        ${scan.ingredients ? `<p class="history-ingredients"><strong>Ingredientes:</strong> ${scan.ingredients}</p>` : ''}
+        <div class="history-actions">
+          <button class="history-action-btn" onclick="shareResult(${JSON.stringify({status:scan.status,explanation:scan.result||'',child}).replace(/"/g,'&quot;')})">
+            📤 Compartir
+          </button>
+          <button class="history-action-btn history-action-btn--red" onclick="deleteScan('${scan.id}', this)">
+            🗑️ Eliminar
+          </button>
+        </div>
+      </div>
+    `;
     list.appendChild(item);
   });
+}
+
+async function deleteScan(id, btn) {
+  if (!confirm('¿Eliminar este escaneo del historial?')) return;
+  btn.closest('.history-card').style.opacity = '0.4';
+  await sb.from('scans').delete().eq('id', id);
+  btn.closest('.history-card').remove();
+}
+
+function shareResult(result) {
+  const status = result.status === 'APTO' ? '✅ APTO' : result.status === 'PRECAUCION' ? '⚠️ PRECAUCIÓN' : '🚫 NO APTO';
+  const child = result.child ? `para ${result.child}` : '';
+  const text = `SafeBite IA${child ? ' ' + child : ''}\n${status}\n\n${result.explanation}\n\n🔗 Analiza tus productos en alergenosplus.netlify.app`;
+  const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+  window.open(url, '_blank');
 }
 
 // ── Screen routing ─────────────────────────────────────────────────────────────
