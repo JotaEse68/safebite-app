@@ -591,24 +591,72 @@ function resetScan() {
 function startVoice() {
   if (!state.activeChild) { alert('Primero añade el perfil de un hijo'); return; }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome.'); return; }
+  if (!SR) {
+    // Fallback: abrir modo texto con instrucciones
+    document.getElementById('textInputArea').classList.remove('hidden');
+    document.getElementById('manualText').placeholder = 'Dicta o escribe los ingredientes aquí...';
+    document.getElementById('manualText').focus();
+    return;
+  }
   state.recognition = new SR();
-  state.recognition.lang = 'es-ES'; state.recognition.continuous = false; state.recognition.interimResults = true;
+  state.recognition.lang = 'es-ES';
+  state.recognition.continuous = true;
+  state.recognition.interimResults = true;
+  let finalText = '';
   document.getElementById('voiceUI').classList.remove('hidden');
   document.getElementById('textInputArea').classList.add('hidden');
   document.getElementById('voiceTranscript').textContent = '';
-  state.recognition.onresult = e => { document.getElementById('voiceTranscript').textContent = Array.from(e.results).map(r => r[0].transcript).join(''); };
-  state.recognition.onend = async () => {
-    const t = document.getElementById('voiceTranscript').textContent;
-    document.getElementById('voiceUI').classList.add('hidden');
-    if (t.trim()) await analyze(t, 'text');
+  document.getElementById('voiceStatus').textContent = '🎤 Habla ahora — dicta los ingredientes';
+  state.recognition.onresult = e => {
+    let interim = '';
+    finalText = '';
+    for (let r of e.results) {
+      if (r.isFinal) finalText += r[0].transcript + ' ';
+      else interim += r[0].transcript;
+    }
+    document.getElementById('voiceTranscript').textContent = (finalText + interim).trim();
   };
-  state.recognition.onerror = () => document.getElementById('voiceUI').classList.add('hidden');
+  state.recognition.onerror = (e) => {
+    console.warn('Voice error:', e.error);
+    if (e.error === 'no-speech') {
+      document.getElementById('voiceStatus').textContent = '⚠️ No te escucho. Habla más cerca del micrófono.';
+    } else {
+      stopVoice();
+    }
+  };
+  state.recognition.onend = () => {
+    // Si continuous mode termina inesperadamente, reiniciar
+    if (document.getElementById('voiceUI').classList.contains('hidden') === false) {
+      const t = document.getElementById('voiceTranscript').textContent.trim();
+      if (t.length > 10) {
+        // Hay texto suficiente — mostrar botón analizar
+        document.getElementById('voiceStatus').textContent = '✅ ¿Es correcto? Pulsa Analizar';
+        document.getElementById('voiceAnalyzeBtn').classList.remove('hidden');
+      } else {
+        try { state.recognition.start(); } catch(e) {}
+      }
+    }
+  };
   state.recognition.start();
   document.getElementById('voiceStatus').textContent = 'Escuchando... habla ahora';
 }
 
-function stopVoice() { if (state.recognition) state.recognition.stop(); document.getElementById('voiceUI').classList.add('hidden'); }
+function stopVoice() {
+  if (state.recognition) { try { state.recognition.stop(); } catch(e) {} state.recognition = null; }
+  document.getElementById('voiceUI').classList.add('hidden');
+  const btn = document.getElementById('voiceAnalyzeBtn');
+  if (btn) btn.classList.add('hidden');
+}
+
+async function analyzeVoice() {
+  const t = document.getElementById('voiceTranscript').textContent.trim();
+  stopVoice();
+  if (t.length > 3) {
+    document.getElementById('manualText').value = t;
+    document.getElementById('textInputArea').classList.remove('hidden');
+    document.getElementById('scanStatus').textContent = '✏️ Revisa el texto dictado y pulsa Analizar, o corrígelo si algo está mal.';
+  }
+}
 
 // ── WhatsApp ───────────────────────────────────────────────────────────────────
 function contactExpert() {
