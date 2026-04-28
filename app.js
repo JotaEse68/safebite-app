@@ -433,6 +433,11 @@ async function analyze(data, mode) {
   if (!checkScanLimit()) return;
   showLoading(mode === 'menu' ? 'Analizando menú...' : 'Analizando ingredientes...', 'IA con protocolos Laztan');
   try {
+    // Check image size before sending (base64 > 900KB = probable timeout)
+    if (mode !== 'text' && data.length > 900000) {
+      throw new Error('Imagen demasiado grande. Fotografía solo la etiqueta de ingredientes, más cerca y con buena luz.');
+    }
+
     // Load admin docs context (Laztan knowledge base)
     const { data: adminDocs } = await sb.from('documents').select('name, path').eq('type', 'admin').limit(5);
     // Load child docs context
@@ -440,22 +445,45 @@ async function analyze(data, mode) {
       ? (await sb.from('documents').select('name, path').eq('child_id', state.activeChild.id).limit(3)).data || []
       : [];
 
-    const res = await fetch('/.netlify/functions/analyze', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        imageDataUrl: data,
-        allergens: state.activeChild?.allergens || [],
-        childName: state.activeChild?.name || 'tu hijo',
-        mode,
-        adminDocNames: (adminDocs || []).map(d => d.name),
-        childDocNames: childDocs.map(d => d.name),
-      }),
-    });
+    // AbortController para timeout de 25 segundos
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+    let res;
+    try {
+      res = await fetch('/.netlify/functions/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          imageDataUrl: data,
+          allergens: state.activeChild?.allergens || [],
+          childName: state.activeChild?.name || 'tu hijo',
+          mode,
+          adminDocNames: (adminDocs || []).map(d => d.name),
+          childDocNames: childDocs.map(d => d.name),
+        }),
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    // Detectar si Netlify devuelve HTML en vez de JSON (función no encontrada)
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
+      console.error('Respuesta no-JSON de la función:', text.substring(0, 200));
+      throw new Error('Error de configuración del servidor. Contacta con soporte.');
+    }
+
     const result = await res.json();
     if (!res.ok || result.error) throw new Error(result.error || 'Error en el análisis');
     await saveScan(result); await incrementScans(); hideLoading(); showResult(result);
   } catch (err) {
-    hideLoading(); document.getElementById('scanStatus').textContent = '⚠️ ' + err.message;
+    hideLoading();
+    let msg = err.message;
+    if (err.name === 'AbortError') msg = 'Tiempo de espera agotado. Inténtalo de nuevo.';
+    document.getElementById('scanStatus').textContent = '⚠️ ' + msg;
   }
 }
 
@@ -592,11 +620,12 @@ function formatBytes(bytes) {
 }
 
 // ── Image compression ─────────────────────────────────────────────────────────
-function compressImage(dataUrl, maxWidth = 1200, quality = 0.75) {
+function compressImage(dataUrl, maxWidth = 800, quality = 0.65) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
       let { width, height } = img;
+      // Reducir más agresivamente para no exceder el límite de 1MB de Netlify Functions
       if (width > maxWidth) {
         height = Math.round(height * maxWidth / width);
         width = maxWidth;
@@ -606,9 +635,20 @@ function compressImage(dataUrl, maxWidth = 1200, quality = 0.75) {
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
+      const compressed = canvas.toDataURL('image/jpeg', quality);
+      // Si aún es demasiado grande (>700KB en base64 ≈ ~525KB binario), comprimir más
+      if (compressed.length > 700000) {
+        const canvas2 = document.createElement('canvas');
+        const scale = Math.sqrt(700000 / compressed.length);
+        canvas2.width = Math.round(width * scale);
+        canvas2.height = Math.round(height * scale);
+        canvas2.getContext('2d').drawImage(img, 0, 0, canvas2.width, canvas2.height);
+        resolve(canvas2.toDataURL('image/jpeg', 0.6));
+      } else {
+        resolve(compressed);
+      }
     };
-    img.onerror = () => resolve(dataUrl); // fallback: use original
+    img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
   });
 }
