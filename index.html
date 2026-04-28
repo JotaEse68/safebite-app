@@ -197,42 +197,30 @@
 
     <!-- scansBar eliminado — sin límites durante beta -->
 
-    <!-- Próximamente -->
-    <div class="coming-soon-card">
-      <p class="coming-label">🚀 Próximamente</p>
-      <div class="coming-grid">
-        <div class="coming-item">
-          <span class="coming-icon">📋</span>
-          <div>
-            <p class="coming-name">Docs médicos</p>
-            <p class="coming-desc">Sube el informe del alergólogo</p>
-          </div>
-        </div>
-        <div class="coming-item">
-          <span class="coming-icon">🔄</span>
-          <div>
-            <p class="coming-name">Alternativas</p>
-            <p class="coming-desc">Si no es apto, te sugerimos uno que sí</p>
-          </div>
-        </div>
-        <div class="coming-item">
-          <span class="coming-icon">⭐</span>
-          <div>
-            <p class="coming-name">Favoritos</p>
-            <p class="coming-desc">Lista de productos seguros</p>
-          </div>
-        </div>
-        <div class="coming-item">
-          <span class="coming-icon">🔔</span>
-          <div>
-            <p class="coming-name">Alertas</p>
-            <p class="coming-desc">Si cambia un producto que usas</p>
-          </div>
-        </div>
+    <!-- Stats del usuario -->
+    <div class="user-stats-card">
+      <div class="user-stat">
+        <span class="user-stat-num" id="statMyScans">—</span>
+        <span class="user-stat-label">Escaneos</span>
+      </div>
+      <div class="user-stat-div"></div>
+      <div class="user-stat">
+        <span class="user-stat-num" id="statMyChildren">—</span>
+        <span class="user-stat-label">Perfiles</span>
+      </div>
+      <div class="user-stat-div"></div>
+      <div class="user-stat">
+        <span class="user-stat-num" id="statMyApto">—</span>
+        <span class="user-stat-label">Aptos</span>
+      </div>
+      <div class="user-stat-div"></div>
+      <div class="user-stat">
+        <span class="user-stat-num" id="statMyNoApto">—</span>
+        <span class="user-stat-label">No aptos</span>
       </div>
     </div>
 
-    <input type="file" id="fileInput" accept="image/*" capture="environment" hidden/>
+        <input type="file" id="fileInput" accept="image/*" capture="environment" hidden/>
     <input type="file" id="fileInputGallery" accept="image/*" hidden/>
   </div>
 </div>
@@ -274,6 +262,9 @@
       </div>
       <div class="app-banner app-banner--result">
         <img src="https://Aka625.b-cdn.net/Varios/bannersafebite%20.png" alt="SafeBite" class="app-banner-img" onerror="this.parentElement.style.display='none'"/>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:0">
+        <button class="btn-secondary" style="margin-top:0;flex:1" onclick="shareCurrentResult()">📤 Compartir por WhatsApp</button>
       </div>
       <button class="btn-primary" onclick="resetScan()">Escanear otro producto</button>
       <button class="btn-whatsapp" onclick="contactExpert()">
