@@ -149,10 +149,16 @@
     <div class="scan-card">
       <p class="scan-label">¿Qué quieres analizar?</p>
       <div class="scan-grid">
+        <button class="scan-btn scan-btn--barcode" onclick="startBarcodeScanner()">
+          <span class="scan-btn-icon">🔍</span>
+          <span class="scan-btn-text">Código de barras</span>
+          <span class="scan-btn-sub">Escanea el producto</span>
+          <span class="scan-btn-badge">NUEVO</span>
+        </button>
         <button class="scan-btn" onclick="triggerCamera('label')">
           <span class="scan-btn-icon">📸</span>
           <span class="scan-btn-text">Cámara</span>
-          <span class="scan-btn-sub">Foto del producto</span>
+          <span class="scan-btn-sub">Foto de etiqueta</span>
         </button>
         <button class="scan-btn" onclick="triggerUpload('label')">
           <span class="scan-btn-icon">🖼️</span>
@@ -197,31 +203,55 @@
 
     <!-- scansBar eliminado — sin límites durante beta -->
 
-    <!-- Stats del usuario -->
-    <div class="user-stats-card">
-      <div class="user-stat">
-        <span class="user-stat-num" id="statMyScans">—</span>
-        <span class="user-stat-label">Escaneos</span>
-      </div>
-      <div class="user-stat-div"></div>
-      <div class="user-stat">
-        <span class="user-stat-num" id="statMyChildren">—</span>
-        <span class="user-stat-label">Perfiles</span>
-      </div>
-      <div class="user-stat-div"></div>
-      <div class="user-stat">
-        <span class="user-stat-num" id="statMyApto">—</span>
-        <span class="user-stat-label">Aptos</span>
-      </div>
-      <div class="user-stat-div"></div>
-      <div class="user-stat">
-        <span class="user-stat-num" id="statMyNoApto">—</span>
-        <span class="user-stat-label">No aptos</span>
-      </div>
+    <!-- Acciones rápidas -->
+    <div class="quick-actions">
+      <button class="quick-action-btn" onclick="openRecipes()">
+        <span class="quick-action-icon">🍳</span>
+        <div>
+          <p class="quick-action-title">¿Qué cocino hoy?</p>
+          <p class="quick-action-desc">Recetas seguras para tu hijo</p>
+        </div>
+        <span class="quick-action-arrow">›</span>
+      </button>
     </div>
 
         <input type="file" id="fileInput" accept="image/*" capture="environment" hidden/>
     <input type="file" id="fileInputGallery" accept="image/*" hidden/>
+
+    <!-- Modal código de barras -->
+    <div id="barcodeModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <p class="modal-title">🔍 Código de barras</p>
+        <p class="modal-sub">Introduce el código del producto (EAN-13 o EAN-8)</p>
+        <div class="field" style="margin-bottom:12px">
+          <input type="number" id="barcodeInput" placeholder="8410076421014" inputmode="numeric"
+            style="font-size:20px;letter-spacing:2px;text-align:center"
+            onkeydown="if(event.key==='Enter') lookupBarcode()"/>
+        </div>
+        <p id="barcodeStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:18px;margin-bottom:12px"></p>
+        <button class="btn-primary" onclick="lookupBarcode()">Buscar producto</button>
+        <button class="btn-secondary" style="margin-top:8px" onclick="closeBarcodeModal()">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- Modal recetas -->
+    <div id="recipesModal" class="modal-overlay hidden">
+      <div class="modal-card" style="max-height:85vh;overflow-y:auto">
+        <p class="modal-title">🍳 Recetas de hoy</p>
+        <p class="modal-sub" id="recipesSubtitle">Seguras para tu hijo</p>
+        <div id="recipesList" style="margin-top:12px"></div>
+        <button class="btn-secondary" style="margin-top:12px" onclick="document.getElementById('recipesModal').classList.add('hidden')">Cerrar</button>
+      </div>
+    </div>
+
+    <!-- Modal tarjeta emergencia -->
+    <div id="emergencyModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div id="emergencyCard" class="emergency-card"></div>
+        <button class="btn-primary" style="margin-top:12px" onclick="shareEmergencyCard()">📤 Compartir tarjeta</button>
+        <button class="btn-secondary" style="margin-top:8px" onclick="document.getElementById('emergencyModal').classList.add('hidden')">Cerrar</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -262,9 +292,6 @@
       </div>
       <div class="app-banner app-banner--result">
         <img src="https://Aka625.b-cdn.net/Varios/bannersafebite%20.png" alt="SafeBite" class="app-banner-img" onerror="this.parentElement.style.display='none'"/>
-      </div>
-      <div style="display:flex;gap:10px;margin-bottom:0">
-        <button class="btn-secondary" style="margin-top:0;flex:1" onclick="shareCurrentResult()">📤 Compartir por WhatsApp</button>
       </div>
       <button class="btn-primary" onclick="resetScan()">Escanear otro producto</button>
       <button class="btn-whatsapp" onclick="contactExpert()">
@@ -343,6 +370,14 @@
         <button class="btn-upgrade">Actualizar a Premium</button>
       </div>
       <div class="children-list" id="profileChildrenList"></div>
+      <button class="quick-action-btn" style="margin-top:4px" onclick="showEmergencyCard(state.activeChild?.id || state.children[0]?.id)">
+        <span class="quick-action-icon">🆘</span>
+        <div>
+          <p class="quick-action-title">Tarjeta de emergencia</p>
+          <p class="quick-action-desc">Compartir alérgenos con el cole, abuelos o campamento</p>
+        </div>
+        <span class="quick-action-arrow">›</span>
+      </button>
       <button class="btn-secondary" onclick="logout()">Cerrar sesión</button>
       <div class="app-banner" style="margin-top:8px">
         <img src="https://Aka625.b-cdn.net/Varios/bannersafebite%20.png" alt="SafeBite" class="app-banner-img" onerror="this.parentElement.style.display='none'"/>
