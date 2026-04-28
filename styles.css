@@ -17,6 +17,9 @@
   --amber-dim: rgba(245,158,11,.12);
   --muted:     #94a3b8;
   --border:    rgba(255,255,255,.08);
+  --glow-green: 0 0 40px rgba(126,217,87,.18);
+  --glow-red:   0 0 40px rgba(239,68,68,.2);
+  --glow-amber: 0 0 40px rgba(245,158,11,.18);
   --border2:   rgba(255,255,255,.14);
   --white:     #ffffff;
   --text:      #e2e8f0;
@@ -64,11 +67,11 @@ html, body {
 .app-banner-img {
   width: 100%;
   height: auto;
-  max-height: 110px;
-  object-fit: cover;
-  object-position: center;
-  border-radius: 16px;
+  max-height: 90px;
+  object-fit: contain;
+  border-radius: 12px;
   display: block;
+  background: transparent;
 }
 .app-banner--result {
   padding: 16px 16px 0;
