@@ -496,7 +496,9 @@ async function analyze(data, mode) {
 
     const result = await res.json();
     if (!res.ok || result.error) throw new Error(result.error || 'Error en el análisis');
-    await saveScan(result); await incrementScans(); hideLoading(); showResult(result);
+    hideLoading(); showResult(result);
+    saveScan(result).catch(e => console.warn('[SafeBite] saveScan bg error:', e.message));
+    incrementScans().catch(e => console.warn('[SafeBite] incrementScans bg error:', e.message));
   } catch (err) {
     hideLoading();
     let msg = err.message;
@@ -510,18 +512,27 @@ function checkScanLimit() {
 }
 
 async function incrementScans() {
-  const n = (state.profile?.scans_this_month || 0) + 1;
-  await sb.from('profiles').update({ scans_this_month: n }).eq('id', state.user.id);
-  if (state.profile) state.profile.scans_this_month = n;
-  renderHome();
+  try {
+    const n = (state.profile?.scans_this_month || 0) + 1;
+    await sb.from('profiles').update({ scans_this_month: n }).eq('id', state.user.id);
+    if (state.profile) state.profile.scans_this_month = n;
+    renderHome();
+  } catch(e) {
+    console.warn('[SafeBite] incrementScans error (no crítico):', e.message);
+  }
 }
 
 async function saveScan(result) {
-  await sb.from('scans').insert({
-    user_id: state.user.id, child_id: state.activeChild?.id,
-    result: result.explanation, status: result.status,
-    ingredients: result.ingredients_found || '', risks: result.risks || [],
-  });
+  try {
+    const { error } = await sb.from('scans').insert({
+      user_id: state.user.id, child_id: state.activeChild?.id,
+      result: result.explanation, status: result.status,
+      ingredients: result.ingredients_found || '', risks: result.risks || [],
+    });
+    if (error) console.warn('[SafeBite] saveScan error (no crítico):', error.message);
+  } catch(e) {
+    console.warn('[SafeBite] saveScan excepción (no crítico):', e.message);
+  }
 }
 
 // ── Show result ────────────────────────────────────────────────────────────────
