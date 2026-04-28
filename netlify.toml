@@ -1,6 +1,6 @@
 [build]
-  publish = "public"
-  functions = "netlify/functions"
+  publish = "."
+  functions = "functions"
 
 [functions]
   node_bundler = "esbuild"
@@ -8,13 +8,13 @@
 [functions."analyze"]
   timeout = 26
 
-# Netlify functions MUST come before the SPA catch-all
+# Netlify functions deben ir ANTES del catch-all SPA
 [[redirects]]
   from = "/.netlify/functions/*"
   to = "/.netlify/functions/:splat"
   status = 200
 
-# SPA fallback - todas las rutas van a index.html
+# SPA fallback
 [[redirects]]
   from = "/*"
   to = "/index.html"
